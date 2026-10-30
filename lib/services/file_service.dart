@@ -35,11 +35,11 @@ class FileService {
 
   /// Sistem dosya seçiciyi açar, seçilen dosyayı Belgelerim'e kopyalar.
   static Future<String?> pick() async {
-    final r = await FilePicker.platform.pickFiles(
+    final file = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: supported,
     );
-    final src = r?.files.single.path;
+    final src = file?.path;
     if (src == null) return null;
     final dir = await docsDir();
     if (p.isWithin(dir.path, src)) return src;
