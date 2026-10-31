@@ -1,12 +1,18 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../models/doc_item.dart';
+import '../services/device_index.dart';
 import '../services/file_service.dart';
 import '../services/recent_store.dart';
 import '../widgets/common.dart';
 import 'draw_screen.dart';
 import 'note_screen.dart';
 import 'viewer_router.dart';
+
+enum _Sort { newest, name, size }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,49 +21,119 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<DocFile> _recents = [];
-  List<DocFile> _local = [];
+  List<DocFile> _notes = [];
   List<DocFile> _device = [];
+
   DocKind? _filter;
   String _query = '';
+  _Sort _sort = _Sort.newest;
+
   bool _loading = true;
   bool _scanning = false;
+  bool _hasPerm = true;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addObserver(this);
+    _boot();
   }
 
-  Future<void> _load() async {
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Ayarlardan izin verip dönünce otomatik tara.
+    if (state == AppLifecycleState.resumed && !_hasPerm) _recheckPermission();
+  }
+
+  Future<void> _boot() async {
+    await _loadLocal();
+    final cached = await DeviceIndex.loadCached(); // anında
+    final perm = await DeviceIndex.hasPermission();
+    if (!mounted) return;
+    setState(() {
+      _device = cached;
+      _hasPerm = perm;
+      _loading = false;
+    });
+    if (perm) _refresh(); // arka planda güncelle
+  }
+
+  Future<void> _loadLocal() async {
     final paths = await RecentStore.load();
-    final local = await FileService.localFiles();
+    final notes = await FileService.localFiles();
     if (!mounted) return;
     setState(() {
       _recents = paths.map(DocFile.fromPath).toList();
-      _local = local;
-      _loading = false;
+      _notes = notes;
     });
   }
 
-  List<DocFile> get _visible {
+  Future<void> _refresh() async {
+    if (_scanning) return;
+    setState(() => _scanning = true);
+    try {
+      final list = await DeviceIndex.refresh();
+      if (mounted) setState(() => _device = list);
+    } catch (_) {}
+    if (mounted) setState(() => _scanning = false);
+  }
+
+  Future<void> _askPermission() async {
+    final ok = await DeviceIndex.requestPermission();
+    if (!mounted) return;
+    setState(() => _hasPerm = ok);
+    if (ok) _refresh();
+  }
+
+  Future<void> _recheckPermission() async {
+    final ok = await DeviceIndex.hasPermission();
+    if (!mounted || !ok) return;
+    setState(() => _hasPerm = true);
+    _refresh();
+  }
+
+  // ───────────── liste hesapları ─────────────
+
+  List<DocFile> get _all {
     final seen = <String>{};
-    final all = <DocFile>[];
-    for (final d in [..._recents, ..._local, ..._device]) {
-      if (seen.add(d.path)) all.add(d);
+    final out = <DocFile>[];
+    for (final d in [..._recents, ..._notes, ..._device]) {
+      if (seen.add(d.path)) out.add(d);
     }
+    return out;
+  }
+
+  List<DocFile> _filtered(List<DocFile> all) {
     final q = _query.toLowerCase();
-    return all
+    final list = all
         .where((d) =>
             (_filter == null || d.kind == _filter) &&
             (q.isEmpty || d.name.toLowerCase().contains(q)))
         .toList();
+    switch (_sort) {
+      case _Sort.newest:
+        list.sort((a, b) => b.modified.compareTo(a.modified));
+      case _Sort.name:
+        list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      case _Sort.size:
+        list.sort((a, b) => b.size.compareTo(a.size));
+    }
+    return list;
   }
+
+  // ───────────── eylemler ─────────────
 
   Future<void> _open(String path) async {
     await openDocument(context, path);
-    _load();
+    _loadLocal();
   }
 
   Future<void> _pick() async {
@@ -68,24 +144,13 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _newNote() async {
     await Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const NoteScreen()));
-    _load();
+    _loadLocal();
   }
 
   Future<void> _newDrawing() async {
     await Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const DrawScreen()));
-    _load();
-  }
-
-  Future<void> _scan() async {
-    setState(() => _scanning = true);
-    final found = await FileService.deviceScan();
-    if (!mounted) return;
-    setState(() {
-      _device = found;
-      _scanning = false;
-    });
-    toast(context, '${found.length} belge bulundu');
+    _loadLocal();
   }
 
   void _showNewSheet() {
@@ -96,15 +161,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.folder_open_rounded),
-              title: const Text('Dosya aç'),
-              subtitle: const Text('PDF, Word, Excel, sunum, metin, görsel'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pick();
-              },
-            ),
             ListTile(
               leading: const Icon(Icons.edit_note_rounded),
               title: const Text('Yeni not yaz'),
@@ -121,6 +177,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 _newDrawing();
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.folder_open_rounded),
+              title: const Text('Dosya seç'),
+              subtitle: const Text('Listede olmayan bir dosyayı aç'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pick();
+              },
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -128,9 +193,32 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ───────────── arayüz ─────────────
+
   @override
   Widget build(BuildContext context) {
-    final items = _visible;
+    final all = _all;
+    final list = _filtered(all);
+    final browsing = _filter == null && _query.isEmpty;
+
+    final counts = <DocKind, int>{};
+    for (final d in all) {
+      counts[d.kind] = (counts[d.kind] ?? 0) + 1;
+    }
+
+    final rows = <Object>[];
+    if (browsing && _recents.isNotEmpty) {
+      rows.add('Son açılanlar');
+      rows.addAll(_recents.take(5));
+    }
+    final title = _filter != null
+        ? '${kindInfo[_filter]!.label} (${list.length})'
+        : browsing
+            ? 'Tüm belgeler (${list.length})'
+            : '${list.length} sonuç';
+    rows.add(title);
+    rows.addAll(list);
+
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showNewSheet,
@@ -142,7 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
+              padding: const EdgeInsets.fromLTRB(20, 16, 4, 0),
               child: Row(
                 children: [
                   const Expanded(
@@ -151,20 +239,22 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
                     ),
                   ),
-                  _scanning
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2.5),
-                          ),
-                        )
-                      : IconButton(
-                          tooltip: 'Cihazda belge ara',
-                          onPressed: _scan,
-                          icon: const Icon(Icons.travel_explore_rounded),
-                        ),
+                  PopupMenuButton<_Sort>(
+                    tooltip: 'Sırala',
+                    icon: const Icon(Icons.sort_rounded),
+                    initialValue: _sort,
+                    onSelected: (v) => setState(() => _sort = v),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: _Sort.newest, child: Text('En yeni')),
+                      PopupMenuItem(value: _Sort.name, child: Text('Ada göre')),
+                      PopupMenuItem(value: _Sort.size, child: Text('Boyuta göre')),
+                    ],
+                  ),
+                  IconButton(
+                    tooltip: 'Yeniden tara',
+                    onPressed: _scanning ? null : _refresh,
+                    icon: const Icon(Icons.refresh_rounded),
+                  ),
                 ],
               ),
             ),
@@ -177,15 +267,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   prefixIcon: const Icon(Icons.search_rounded),
                   filled: true,
                   fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: Color(0xFFE2E6EC)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: Color(0xFFE2E6EC)),
-                  ),
+                  contentPadding: EdgeInsets.zero,
+                  border: _border(),
+                  enabledBorder: _border(),
+                  focusedBorder: _border(),
                 ),
               ),
             ),
@@ -195,22 +280,37 @@ class _HomeScreenState extends State<HomeScreen> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 children: [
-                  _chip('Tümü', null),
-                  for (final k in DocKind.values.where((k) => k != DocKind.other))
-                    _chip(kindInfo[k]!.label, k),
+                  _chip('Tümü', null, all.length),
+                  for (final k in DocKind.values)
+                    if (k != DocKind.other && (counts[k] ?? 0) > 0)
+                      _chip(kindInfo[k]!.label, k, counts[k]!),
                 ],
               ),
             ),
-            const SizedBox(height: 8),
+            if (_scanning)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+            if (!_hasPerm && Platform.isAndroid) _permissionCard(),
+            const SizedBox(height: 4),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
-                  : items.isEmpty
+                  : list.isEmpty && rows.length <= 1
                       ? _empty()
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
-                          itemCount: items.length,
-                          itemBuilder: (_, i) => _tile(items[i]),
+                      : RefreshIndicator(
+                          onRefresh: _refresh,
+                          child: ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
+                            itemCount: rows.length,
+                            itemBuilder: (_, i) {
+                              final r = rows[i];
+                              if (r is String) return _header(r);
+                              return _tile(r as DocFile);
+                            },
+                          ),
                         ),
             ),
           ],
@@ -219,13 +319,51 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _chip(String label, DocKind? kind) {
+  OutlineInputBorder _border() => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFFE2E6EC)),
+      );
+
+  Widget _header(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF5A6B7F),
+          ),
+        ),
+      );
+
+  Widget _permissionCard() => Container(
+        margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEAF1FB),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Telefondaki PDF, Word, Excel ve sunumları listelemek için dosya erişim izni ver.',
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(onPressed: _askPermission, child: const Text('İzin ver')),
+          ],
+        ),
+      );
+
+  Widget _chip(String label, DocKind? kind, int count) {
     final selected = _filter == kind;
-    final color = kind == null ? Theme.of(context).colorScheme.primary : kindInfo[kind]!.color;
+    final color =
+        kind == null ? Theme.of(context).colorScheme.primary : kindInfo[kind]!.color;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: ChoiceChip(
-        label: Text(label),
+        label: Text('$label  $count'),
         selected: selected,
         showCheckmark: false,
         selectedColor: color,
@@ -263,19 +401,32 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           child: Icon(info.icon, color: info.color),
         ),
-        title: Text(d.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text('${d.ext}  ·  ${formatSize(d.size)}  ·  ${formatDate(d.modified)}'),
+        title: Text(
+          d.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          '${d.ext}  ·  ${formatSize(d.size)}  ·  ${formatDate(d.modified)}\n'
+          '${p.basename(p.dirname(d.path))}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        isThreeLine: true,
         trailing: isRecent
             ? PopupMenuButton<String>(
                 onSelected: (v) async {
                   if (v == 'remove') {
                     await RecentStore.remove(d.path);
-                    _load();
+                    _loadLocal();
                   }
                 },
                 itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'remove', child: Text('Son açılanlardan kaldır')),
+                  PopupMenuItem(
+                    value: 'remove',
+                    child: Text('Son açılanlardan kaldır'),
+                  ),
                 ],
               )
             : const Icon(Icons.chevron_right_rounded),
@@ -293,19 +444,17 @@ class _HomeScreenState extends State<HomeScreen> {
             const Icon(Icons.folder_open_rounded, size: 56, color: Color(0xFF9AA6B5)),
             const SizedBox(height: 12),
             Text(
-              _query.isNotEmpty || _filter != null ? 'Eşleşen belge yok' : 'Henüz belge yok',
+              _query.isNotEmpty || _filter != null
+                  ? 'Eşleşen belge yok'
+                  : _scanning
+                      ? 'Belgeler taranıyor…'
+                      : 'Henüz belge yok',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 6),
             const Text(
-              'Cihazından bir dosya seç, yeni bir not yaz ya da çizim yap.',
+              'İlk tarama biraz sürebilir, sonraki açılışlar anında olur.',
               textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _pick,
-              icon: const Icon(Icons.folder_open_rounded),
-              label: const Text('Dosya aç'),
             ),
           ],
         ),
