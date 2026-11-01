@@ -395,55 +395,64 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final pal = Pal.of(context);
     final info = kindInfo[d.kind]!;
     final isRecent = _recents.any((r) => r.path == d.path);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: pal.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: pal.border),
-      ),
-      child: ListTile(
-        onTap: () => _open(d.path),
-        contentPadding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        leading: Container(
-          width: 46,
-          height: 46,
-          decoration: BoxDecoration(
-            color: info.color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(12),
+    final dir = p.basename(p.dirname(d.path));
+    // "0" veya çok kısa/anlamsız klasör isimlerini gösterme
+    final showDir = dir.length > 1 && dir != '0';
+    return Material(
+      color: pal.card,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: pal.border),
+        ),
+        child: ListTile(
+          onTap: () => _open(d.path),
+          dense: true,
+          contentPadding: const EdgeInsets.fromLTRB(10, 2, 4, 2),
+          minVerticalPadding: 6,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          leading: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: info.color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(info.icon, color: info.color, size: 20),
           ),
-          child: Icon(info.icon, color: info.color),
+          title: Text(
+            d.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          ),
+          subtitle: Text(
+            '${d.ext}  ·  ${formatSize(d.size)}  ·  ${formatDate(d.modified)}'
+            '${showDir ? '\n$dir' : ''}',
+            maxLines: showDir ? 2 : 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, color: pal.muted),
+          ),
+          isThreeLine: showDir,
+          trailing: isRecent
+              ? PopupMenuButton<String>(
+                  onSelected: (v) async {
+                    if (v == 'remove') {
+                      await RecentStore.remove(d.path);
+                      _loadLocal();
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'remove',
+                      child: Text('Son açılanlardan kaldır'),
+                    ),
+                  ],
+                )
+              : const Icon(Icons.chevron_right_rounded, size: 20),
         ),
-        title: Text(
-          d.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Text(
-          '${d.ext}  ·  ${formatSize(d.size)}  ·  ${formatDate(d.modified)}\n'
-          '${p.basename(p.dirname(d.path))}',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        isThreeLine: true,
-        trailing: isRecent
-            ? PopupMenuButton<String>(
-                onSelected: (v) async {
-                  if (v == 'remove') {
-                    await RecentStore.remove(d.path);
-                    _loadLocal();
-                  }
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(
-                    value: 'remove',
-                    child: Text('Son açılanlardan kaldır'),
-                  ),
-                ],
-              )
-            : const Icon(Icons.chevron_right_rounded),
       ),
     );
   }
