@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../ink/ink_session.dart';
 import '../services/file_service.dart';
 import '../services/recent_store.dart';
 import '../widgets/common.dart';
@@ -24,6 +25,7 @@ class _NoteScreenState extends State<NoteScreen> {
   final _title = TextEditingController();
   final _body = TextEditingController();
   String? _path;
+  InkSession? _ink;
   bool _dirty = false;
   bool _loading = true;
 
@@ -33,6 +35,7 @@ class _NoteScreenState extends State<NoteScreen> {
   void initState() {
     super.initState();
     _path = widget.path;
+    if (_path != null) _ink = InkSession(_path!);
     _init();
   }
 
@@ -40,7 +43,20 @@ class _NoteScreenState extends State<NoteScreen> {
   void dispose() {
     _title.dispose();
     _body.dispose();
+    _ink?.dispose();
     super.dispose();
+  }
+
+  void _refresh() => setState(() {});
+
+  void _togglePen() {
+    final ink = _ink;
+    if (ink == null) {
+      toast(context, 'Çizmek için önce notu kaydet');
+      return;
+    }
+    ink.toggle();
+    setState(() {});
   }
 
   Future<void> _init() async {
@@ -68,6 +84,7 @@ class _NoteScreenState extends State<NoteScreen> {
     if (_isNew) {
       final dir = await FileService.docsDir();
       _path = await FileService.uniquePath(dir.path, '$_safeTitle.txt');
+      _ink ??= InkSession(_path!);
     }
     await File(_path!).writeAsString(_body.text);
     await RecentStore.add(_path!);
@@ -134,6 +151,26 @@ class _NoteScreenState extends State<NoteScreen> {
     final words = _body.text.trim().isEmpty
         ? 0
         : _body.text.trim().split(RegExp(r'\s+')).length;
+    final ink = _ink;
+    ink?.adaptColor(context);
+    final penOn = ink?.pen == true;
+
+    final textArea = Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+      child: TextField(
+        controller: _body,
+        maxLines: null,
+        expands: true,
+        autofocus: _isNew,
+        textAlignVertical: TextAlignVertical.top,
+        style: const TextStyle(fontSize: 17, height: 1.55),
+        decoration: const InputDecoration(
+          hintText: 'Yazmaya başla…',
+          border: InputBorder.none,
+        ),
+        onChanged: (_) => setState(() {}),
+      ),
+    );
 
     return PopScope(
       canPop: !_dirty,
@@ -154,6 +191,18 @@ class _NoteScreenState extends State<NoteScreen> {
               : Text(fileTitle(_path!), overflow: TextOverflow.ellipsis),
           actions: [
             IconButton(
+              tooltip: penOn ? 'Yazma moduna geç' : 'Kalemle çiz',
+              isSelected: penOn,
+              style: penOn
+                  ? IconButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Colors.white,
+                    )
+                  : null,
+              onPressed: _togglePen,
+              icon: const Icon(Icons.draw_rounded),
+            ),
+            IconButton(
               tooltip: 'Kaydet',
               onPressed: _dirty || _isNew ? _save : null,
               icon: const Icon(Icons.save_rounded),
@@ -170,23 +219,11 @@ class _NoteScreenState extends State<NoteScreen> {
             : Column(
                 children: [
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                      child: TextField(
-                        controller: _body,
-                        maxLines: null,
-                        expands: true,
-                        autofocus: _isNew,
-                        textAlignVertical: TextAlignVertical.top,
-                        style: const TextStyle(fontSize: 17, height: 1.55),
-                        decoration: const InputDecoration(
-                          hintText: 'Yazmaya başla…',
-                          border: InputBorder.none,
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ),
+                    child: ink == null
+                        ? textArea
+                        : ink.watch(() => ink.overlay(page: 1, child: textArea)),
                   ),
+                  if (ink != null && ink.pen) ink.toolbar(context, _refresh),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
                     child: Align(

@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import '../ink/ink_core.dart';
 import '../services/file_service.dart';
 import '../services/recent_store.dart';
+import '../theme.dart';
 import '../widgets/common.dart';
 
 enum Paper { blank, ruled, grid, dots }
@@ -282,7 +283,7 @@ class _DrawScreenState extends State<DrawScreen> {
           children: [
             Expanded(
               child: Container(
-                color: const Color(0xFFE9ECF1),
+                color: Pal.of(context).canvas,
                 child: LayoutBuilder(
                   builder: (context, c) {
                     var w = c.maxWidth - 24;

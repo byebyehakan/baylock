@@ -5,6 +5,8 @@ import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:xml/xml.dart';
 
+import '../ink/ink_session.dart';
+import '../theme.dart';
 import '../widgets/common.dart';
 
 Future<Archive> _readZip(String path) async {
@@ -79,76 +81,106 @@ class _WordScreenState extends State<WordScreen> {
 
   double _size(int h) => switch (h) { 0 => 28, 1 => 24, 2 => 20, 3 => 18, _ => 16 };
 
+  late final InkSession _ink = InkSession(widget.path);
+
+  @override
+  void dispose() {
+    _ink.dispose();
+    super.dispose();
+  }
+
+  void _refresh() => setState(() {});
+
+  Widget _paraWidget(_Para para, Pal pal) {
+    if (para.runs.isEmpty) return const SizedBox(height: 12);
+    final isHead = para.heading >= 0;
+    return Padding(
+      padding: EdgeInsets.only(top: isHead ? 14 : 0, bottom: 8),
+      child: SelectableText.rich(
+        TextSpan(
+          children: [
+            for (final r in para.runs)
+              TextSpan(
+                text: r.text,
+                style: TextStyle(
+                  fontWeight: (r.bold || isHead) ? FontWeight.w700 : FontWeight.w400,
+                  fontStyle: r.italic ? FontStyle.italic : FontStyle.normal,
+                  decoration:
+                      r.underline ? TextDecoration.underline : TextDecoration.none,
+                ),
+              ),
+          ],
+        ),
+        style: TextStyle(
+          fontSize: _size(para.heading),
+          height: 1.5,
+          color: pal.text,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    _ink.adaptColor(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(fileTitle(widget.path), overflow: TextOverflow.ellipsis),
-        actions: fileActions(context, widget.path),
+        actions: [
+          _ink.penButton(context, _refresh),
+          ...fileActions(context, widget.path),
+        ],
       ),
-      body: FutureBuilder<List<_Para>>(
-        future: _future,
-        builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError) {
-            return _ErrorBox(
-              'Bu Word dosyası okunamadı. Sağ üstteki düğmeyle başka bir uygulamada açabilirsin.',
-            );
-          }
-          final paras = snap.data!;
-          return Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760),
-              child: Container(
-                margin: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFE2E6EC)),
-                ),
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(22, 24, 22, 40),
-                  itemCount: paras.length,
-                  itemBuilder: (_, i) {
-                    final para = paras[i];
-                    if (para.runs.isEmpty) return const SizedBox(height: 12);
-                    final isHead = para.heading >= 0;
-                    return Padding(
-                      padding: EdgeInsets.only(top: isHead ? 14 : 0, bottom: 8),
-                      child: SelectableText.rich(
-                        TextSpan(
-                          children: [
-                            for (final r in para.runs)
-                              TextSpan(
-                                text: r.text,
-                                style: TextStyle(
-                                  fontWeight: (r.bold || isHead)
-                                      ? FontWeight.w700
-                                      : FontWeight.w400,
-                                  fontStyle:
-                                      r.italic ? FontStyle.italic : FontStyle.normal,
-                                  decoration: r.underline
-                                      ? TextDecoration.underline
-                                      : TextDecoration.none,
-                                ),
+      body: Column(
+        children: [
+          Expanded(
+            child: FutureBuilder<List<_Para>>(
+              future: _future,
+              builder: (context, snap) {
+                if (snap.connectionState != ConnectionState.done) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snap.hasError) {
+                  return _ErrorBox(
+                    'Bu Word dosyası okunamadı. Sağ üstteki düğmeyle başka bir uygulamada açabilirsin.',
+                  );
+                }
+                final paras = snap.data!;
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: Container(
+                      margin: const EdgeInsets.all(12),
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: pal.card,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: pal.border),
+                      ),
+                      child: _ink.watch(
+                        () => SingleChildScrollView(
+                          physics: _ink.physics,
+                          child: _ink.overlay(
+                            page: 1,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(22, 24, 22, 40),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [for (final para in paras) _paraWidget(para, pal)],
                               ),
-                          ],
-                        ),
-                        style: TextStyle(
-                          fontSize: _size(para.heading),
-                          height: 1.5,
-                          color: const Color(0xFF1B2430),
+                            ),
+                          ),
                         ),
                       ),
-                    );
-                  },
-                ),
-              ),
+                    ),
+                  ),
+                );
+              },
             ),
-          );
-        },
+          ),
+          if (_ink.pen) _ink.toolbar(context, _refresh),
+        ],
       ),
     );
   }
@@ -167,13 +199,17 @@ class SlidesScreen extends StatefulWidget {
 class _SlidesScreenState extends State<SlidesScreen> {
   late final Future<List<List<String>>> _future = _load();
   final _controller = PageController();
+  late final InkSession _ink = InkSession(widget.path);
   int _page = 0;
 
   @override
   void dispose() {
     _controller.dispose();
+    _ink.dispose();
     super.dispose();
   }
+
+  void _refresh() => setState(() {});
 
   Future<List<List<String>>> _load() async {
     final arc = await _readZip(widget.path);
@@ -196,10 +232,15 @@ class _SlidesScreenState extends State<SlidesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    _ink.adaptColor(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(fileTitle(widget.path), overflow: TextOverflow.ellipsis),
-        actions: fileActions(context, widget.path),
+        actions: [
+          _ink.penButton(context, _refresh),
+          ...fileActions(context, widget.path),
+        ],
       ),
       body: FutureBuilder<List<List<String>>>(
         future: _future,
@@ -216,55 +257,63 @@ class _SlidesScreenState extends State<SlidesScreen> {
           return Column(
             children: [
               Expanded(
-                child: PageView.builder(
-                  controller: _controller,
-                  itemCount: slides.length,
-                  onPageChanged: (i) => setState(() => _page = i),
-                  itemBuilder: (_, i) {
-                    final lines = slides[i];
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: AspectRatio(
-                          aspectRatio: 16 / 9,
-                          child: Container(
-                            padding: const EdgeInsets.all(18),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: const Color(0xFFE2E6EC)),
-                            ),
-                            child: lines.isEmpty
-                                ? const Center(child: Text('Bu slaytta metin yok'))
-                                : ListView(
-                                    children: [
-                                      Text(
-                                        lines.first,
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                child: _ink.watch(
+                  () => PageView.builder(
+                    controller: _controller,
+                    physics: _ink.physics,
+                    itemCount: slides.length,
+                    onPageChanged: (i) => setState(() => _page = i),
+                    itemBuilder: (_, i) {
+                      final lines = slides[i];
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child: _ink.overlay(
+                              page: i + 1,
+                              child: Container(
+                                padding: const EdgeInsets.all(18),
+                                decoration: BoxDecoration(
+                                  color: pal.card,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: pal.border),
+                                ),
+                                child: lines.isEmpty
+                                    ? const Center(child: Text('Bu slaytta metin yok'))
+                                    : ListView(
+                                        physics: const NeverScrollableScrollPhysics(),
+                                        children: [
+                                          Text(
+                                            lines.first,
+                                            style: const TextStyle(
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          for (final l in lines.skip(1))
+                                            Padding(
+                                              padding: const EdgeInsets.only(bottom: 6),
+                                              child: Text('•  $l',
+                                                  style: const TextStyle(fontSize: 14)),
+                                            ),
+                                        ],
                                       ),
-                                      const SizedBox(height: 10),
-                                      for (final l in lines.skip(1))
-                                        Padding(
-                                          padding: const EdgeInsets.only(bottom: 6),
-                                          child: Text('•  $l',
-                                              style: const TextStyle(fontSize: 14)),
-                                        ),
-                                    ],
-                                  ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.only(bottom: 24),
+                padding: const EdgeInsets.only(bottom: 12, top: 4),
                 child: Text('Slayt ${_page + 1} / ${slides.length}'),
               ),
+              if (_ink.pen) _ink.toolbar(context, _refresh),
             ],
           );
         },

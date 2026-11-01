@@ -7,6 +7,7 @@ import '../models/doc_item.dart';
 import '../services/device_index.dart';
 import '../services/file_service.dart';
 import '../services/recent_store.dart';
+import '../theme.dart';
 import '../widgets/common.dart';
 import 'draw_screen.dart';
 import 'note_screen.dart';
@@ -197,6 +198,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final pal = Pal.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final all = _all;
     final list = _filtered(all);
     final browsing = _filter == null && _query.isEmpty;
@@ -251,6 +254,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ],
                   ),
                   IconButton(
+                    tooltip: 'Tema',
+                    onPressed: () => setThemeMode(
+                      isDark ? ThemeMode.light : ThemeMode.dark,
+                    ),
+                    icon: Icon(isDark
+                        ? Icons.light_mode_rounded
+                        : Icons.dark_mode_rounded),
+                  ),
+                  IconButton(
                     tooltip: 'Yeniden tara',
                     onPressed: _scanning ? null : _refresh,
                     icon: const Icon(Icons.refresh_rounded),
@@ -266,7 +278,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   hintText: 'Belge ara',
                   prefixIcon: const Icon(Icons.search_rounded),
                   filled: true,
-                  fillColor: Colors.white,
+                  fillColor: pal.card,
                   contentPadding: EdgeInsets.zero,
                   border: _border(),
                   enabledBorder: _border(),
@@ -321,17 +333,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   OutlineInputBorder _border() => OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFFE2E6EC)),
+        borderSide: BorderSide(color: Pal.of(context).border),
       );
 
   Widget _header(String text) => Padding(
         padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
         child: Text(
           text,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF5A6B7F),
+            color: Pal.of(context).muted,
           ),
         ),
       );
@@ -340,7 +352,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFFEAF1FB),
+          color: Pal.of(context).infoBox,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
@@ -357,6 +369,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
 
   Widget _chip(String label, DocKind? kind, int count) {
+    final pal = Pal.of(context);
     final selected = _filter == kind;
     final color =
         kind == null ? Theme.of(context).colorScheme.primary : kindInfo[kind]!.color;
@@ -368,25 +381,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         showCheckmark: false,
         selectedColor: color,
         labelStyle: TextStyle(
-          color: selected ? Colors.white : const Color(0xFF14202F),
+          color: selected ? Colors.white : pal.text,
           fontWeight: FontWeight.w600,
         ),
-        backgroundColor: Colors.white,
-        side: BorderSide(color: selected ? color : const Color(0xFFE2E6EC)),
+        backgroundColor: pal.card,
+        side: BorderSide(color: selected ? color : pal.border),
         onSelected: (_) => setState(() => _filter = kind),
       ),
     );
   }
 
   Widget _tile(DocFile d) {
+    final pal = Pal.of(context);
     final info = kindInfo[d.kind]!;
     final isRecent = _recents.any((r) => r.path == d.path);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: pal.card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E6EC)),
+        border: Border.all(color: pal.border),
       ),
       child: ListTile(
         onTap: () => _open(d.path),

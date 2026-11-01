@@ -12,6 +12,7 @@ import '../services/annotation_store.dart';
 import '../services/file_service.dart';
 import '../services/pdf_export.dart';
 import '../services/recent_store.dart';
+import '../theme.dart';
 import '../widgets/common.dart';
 
 enum _Menu { shareInk, shareOriginal, saveCopy, overwrite, clear, external }
@@ -346,7 +347,7 @@ class _PdfScreenState extends State<PdfScreen> {
                     widget.path,
                     controller: _controller,
                     params: PdfViewerParams(
-                      backgroundColor: const Color(0xFFE9ECF1),
+                      backgroundColor: Pal.of(context).canvas,
                       // Kalem modunda tek parmakla kaydırma kapanır,
                       // iki parmakla yakınlaştırma açık kalır.
                       panEnabled: !_pen,

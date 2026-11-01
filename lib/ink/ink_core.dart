@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
+
 // ───────────────────────── Araçlar ─────────────────────────
 
 enum ToolKind { freehand, shape, eraser }
@@ -550,7 +552,7 @@ Future<Color?> pickInkColor(BuildContext context, Color initial) {
                     decoration: BoxDecoration(
                       color: c,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFE2E6EC)),
+                      border: Border.all(color: Pal.of(ctx).border),
                     ),
                   ),
                   slider('Renk tonu', hsv.hue, 360, (v) => setS(() => hsv = hsv.withHue(v))),
@@ -597,13 +599,14 @@ class _InkToolbarState extends State<InkToolbar> {
   Widget build(BuildContext context) {
     final m = widget.model;
     final scheme = Theme.of(context).colorScheme;
+    final pal = Pal.of(context);
 
     return SafeArea(
       top: false,
       child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: Color(0xFFE2E6EC))),
+        decoration: BoxDecoration(
+          color: pal.card,
+          border: Border(top: BorderSide(color: pal.border)),
         ),
         child: ListenableBuilder(
           listenable: m,
@@ -658,7 +661,7 @@ class _InkToolbarState extends State<InkToolbar> {
                           child: Text(
                             '${m.width.round()}',
                             textAlign: TextAlign.right,
-                            style: const TextStyle(color: Color(0xFF5A6B7F)),
+                            style: TextStyle(color: pal.muted),
                           ),
                         ),
                       ],
@@ -772,7 +775,7 @@ class _InkToolbarState extends State<InkToolbar> {
           color: c,
           shape: BoxShape.circle,
           border: Border.all(
-            color: sel ? scheme.primary : const Color(0xFFE2E6EC),
+            color: sel ? scheme.primary : Pal.of(context).border,
             width: sel ? 3 : 1,
           ),
         ),
@@ -808,16 +811,17 @@ class _InkToolbarState extends State<InkToolbar> {
   }
 
   Widget _sizePreview(InkModel m) {
+    final pal = Pal.of(context);
     final d = (m.width * m.tool.widthMul).clamp(2.0, 38.0).toDouble();
     return Container(
       width: d,
       height: d,
       decoration: BoxDecoration(
         color: m.tool.kind == ToolKind.eraser
-            ? const Color(0xFFE2E6EC)
+            ? pal.border
             : m.color.withValues(alpha: m.tool.alpha),
         shape: BoxShape.circle,
-        border: Border.all(color: const Color(0xFFCBD2DC)),
+        border: Border.all(color: pal.muted),
       ),
     );
   }

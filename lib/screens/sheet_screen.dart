@@ -5,6 +5,8 @@ import 'package:excel/excel.dart' hide Border;
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import '../ink/ink_session.dart';
+import '../theme.dart';
 import '../widgets/common.dart';
 
 class SheetScreen extends StatefulWidget {
@@ -25,6 +27,16 @@ class _SheetScreenState extends State<SheetScreen> {
   bool _loading = true;
   bool _dirty = false;
   String? _error;
+
+  late final InkSession _ink = InkSession(widget.path);
+
+  @override
+  void dispose() {
+    _ink.dispose();
+    super.dispose();
+  }
+
+  void _refresh() => setState(() {});
 
   bool get _isCsv => p.extension(widget.path).toLowerCase() == '.csv';
 
@@ -172,10 +184,12 @@ class _SheetScreenState extends State<SheetScreen> {
 
   @override
   Widget build(BuildContext context) {
+    _ink.adaptColor(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(fileTitle(widget.path), overflow: TextOverflow.ellipsis),
         actions: [
+          _ink.penButton(context, _refresh),
           if (_dirty)
             TextButton.icon(
               onPressed: _save,
@@ -200,6 +214,7 @@ class _SheetScreenState extends State<SheetScreen> {
                       children: [
                         Expanded(child: _grid()),
                         if (_sheets.length > 1) _tabs(),
+                        if (_ink.pen) _ink.toolbar(context, _refresh),
                       ],
                     ),
     );
@@ -227,9 +242,10 @@ class _SheetScreenState extends State<SheetScreen> {
   }
 
   Widget _grid() {
+    final pal = Pal.of(context);
     final rows = _sheets[_current]!;
     final cols = max(1, rows.fold<int>(0, (m, r) => max(m, r.length)));
-    const border = BorderSide(color: Color(0xFFE2E6EC));
+    final line = BorderSide(color: pal.border);
 
     Widget cell(String text, {double w = _cw, bool head = false, VoidCallback? onTap}) {
       return InkWell(
@@ -240,8 +256,8 @@ class _SheetScreenState extends State<SheetScreen> {
           alignment: Alignment.centerLeft,
           padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
-            color: head ? const Color(0xFFEEF1F5) : Colors.white,
-            border: const Border(right: border, bottom: border),
+            color: head ? pal.headCell : pal.card,
+            border: Border(right: line, bottom: line),
           ),
           child: Text(
             text,
@@ -249,37 +265,47 @@ class _SheetScreenState extends State<SheetScreen> {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontWeight: head ? FontWeight.w600 : FontWeight.w400,
-              color: head ? const Color(0xFF5A6B7F) : const Color(0xFF1B2430),
+              color: head ? pal.muted : pal.text,
             ),
           ),
         ),
       );
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SizedBox(
-        width: 48 + cols * _cw,
-        child: ListView.builder(
-          itemCount: rows.length + 1,
-          itemExtent: _rh,
-          itemBuilder: (_, i) {
-            if (i == 0) {
-              return Row(children: [
-                cell('', w: 48, head: true),
-                for (var c = 0; c < cols; c++) cell(_colName(c), head: true),
-              ]);
-            }
-            final r = i - 1;
-            return Row(children: [
-              cell('${r + 1}', w: 48, head: true),
-              for (var c = 0; c < cols; c++)
-                cell(
-                  c < rows[r].length ? rows[r][c] : '',
-                  onTap: () => _editCell(r, c),
-                ),
-            ]);
-          },
+    final page = _sheets.keys.toList().indexOf(_current!) + 1;
+    final width = 48 + cols * _cw;
+    final height = (rows.length + 1) * _rh;
+
+    return _ink.watch(
+      () => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: _ink.physics,
+        child: SingleChildScrollView(
+          physics: _ink.physics,
+          child: _ink.overlay(
+            page: page,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: Column(
+                children: [
+                  Row(children: [
+                    cell('', w: 48, head: true),
+                    for (var c = 0; c < cols; c++) cell(_colName(c), head: true),
+                  ]),
+                  for (var r = 0; r < rows.length; r++)
+                    Row(children: [
+                      cell('${r + 1}', w: 48, head: true),
+                      for (var c = 0; c < cols; c++)
+                        cell(
+                          c < rows[r].length ? rows[r][c] : '',
+                          onTap: () => _editCell(r, c),
+                        ),
+                    ]),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

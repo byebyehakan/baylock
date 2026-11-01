@@ -7,6 +7,7 @@ import 'theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   pdfrxFlutterInitialize();
+  await loadThemeMode();
   runApp(const BaylockApp());
 }
 
@@ -15,11 +16,16 @@ class BaylockApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Baylock',
-      debugShowCheckedModeBanner: false,
-      theme: buildTheme(),
-      home: const HomeScreen(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeMode,
+      builder: (_, mode, __) => MaterialApp(
+        title: 'Baylock',
+        debugShowCheckedModeBanner: false,
+        theme: buildTheme(Brightness.light),
+        darkTheme: buildTheme(Brightness.dark),
+        themeMode: mode, // varsayılan: telefonun ayarı
+        home: const HomeScreen(),
+      ),
     );
   }
 }
