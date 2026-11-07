@@ -10,6 +10,7 @@ class FileService {
   static const supported = [
     'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx',
     'odt', 'ods', 'odp', 'rtf', 'txt', 'md', 'png', 'jpg', 'jpeg', 'webp',
+    'baylock',
   ];
 
   /// Uygulamanın kendi klasörü: sadece uygulamada yazdığın notlar ve çizimler.

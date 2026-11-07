@@ -8,6 +8,9 @@ import 'package:path/path.dart' as p;
 import '../ink/ink_session.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/page_notes_button.dart';
+import '../widgets/quick_scroll_rail.dart';
+import '../widgets/share_with_notes_button.dart';
 
 class SheetScreen extends StatefulWidget {
   final String path;
@@ -27,11 +30,13 @@ class _SheetScreenState extends State<SheetScreen> {
   bool _loading = true;
   bool _dirty = false;
   String? _error;
+  final _verticalController = ScrollController();
 
   late final InkSession _ink = InkSession(widget.path);
 
   @override
   void dispose() {
+    _verticalController.dispose();
     _ink.dispose();
     super.dispose();
   }
@@ -189,6 +194,13 @@ class _SheetScreenState extends State<SheetScreen> {
       appBar: AppBar(
         title: Text(fileTitle(widget.path), overflow: TextOverflow.ellipsis),
         actions: [
+          ShareWithNotesButton(documentPath: widget.path),
+          if (_current != null)
+            PageNotesButton(
+              documentPath: widget.path,
+              pageKey: () => 'sheet-$_current',
+              pageLabel: () => 'Sayfa: $_current',
+            ),
           _ink.penButton(context, _refresh),
           if (_dirty)
             TextButton.icon(
@@ -212,7 +224,23 @@ class _SheetScreenState extends State<SheetScreen> {
                   ? const Center(child: Text('Tablo boş'))
                   : Column(
                       children: [
-                        Expanded(child: _grid()),
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              Positioned.fill(child: _grid()),
+                              Positioned(
+                                right: 6,
+                                top: 0,
+                                bottom: 0,
+                                child: Center(
+                                  child: QuickScrollRail(
+                                    controller: _verticalController,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         if (_sheets.length > 1) _tabs(),
                         if (_ink.pen) _ink.toolbar(context, _refresh),
                       ],
@@ -281,6 +309,7 @@ class _SheetScreenState extends State<SheetScreen> {
         scrollDirection: Axis.horizontal,
         physics: _ink.physics,
         child: SingleChildScrollView(
+          controller: _verticalController,
           physics: _ink.physics,
           child: _ink.overlay(
             page: page,

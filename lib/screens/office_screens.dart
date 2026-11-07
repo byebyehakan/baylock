@@ -8,6 +8,9 @@ import 'package:xml/xml.dart';
 import '../ink/ink_session.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/page_notes_button.dart';
+import '../widgets/quick_scroll_rail.dart';
+import '../widgets/share_with_notes_button.dart';
 
 Future<Archive> _readZip(String path) async {
   final bytes = await File(path).readAsBytes();
@@ -46,6 +49,7 @@ class WordScreen extends StatefulWidget {
 
 class _WordScreenState extends State<WordScreen> {
   late final Future<List<_Para>> _future = _load();
+  final _scrollController = ScrollController();
 
   Future<List<_Para>> _load() async {
     final arc = await _readZip(widget.path);
@@ -85,6 +89,7 @@ class _WordScreenState extends State<WordScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _ink.dispose();
     super.dispose();
   }
@@ -129,6 +134,12 @@ class _WordScreenState extends State<WordScreen> {
         title: Text(fileTitle(widget.path), overflow: TextOverflow.ellipsis),
         actions: [
           _ink.penButton(context, _refresh),
+          ShareWithNotesButton(documentPath: widget.path),
+          PageNotesButton(
+            documentPath: widget.path,
+            pageKey: () => 'word-1',
+            pageLabel: () => 'Belge',
+          ),
           ...fileActions(context, widget.path),
         ],
       ),
@@ -158,20 +169,46 @@ class _WordScreenState extends State<WordScreen> {
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: pal.border),
                       ),
-                      child: _ink.watch(
-                        () => SingleChildScrollView(
-                          physics: _ink.physics,
-                          child: _ink.overlay(
-                            page: 1,
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(22, 24, 22, 40),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [for (final para in paras) _paraWidget(para, pal)],
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: _ink.watch(
+                              () => SingleChildScrollView(
+                                controller: _scrollController,
+                                physics: _ink.physics,
+                                child: _ink.overlay(
+                                  page: 1,
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      22,
+                                      24,
+                                      22,
+                                      40,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        for (final para in paras)
+                                          _paraWidget(para, pal),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
+                          Positioned(
+                            right: 6,
+                            top: 0,
+                            bottom: 0,
+                            child: Center(
+                              child: QuickScrollRail(
+                                controller: _scrollController,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -181,142 +218,6 @@ class _WordScreenState extends State<WordScreen> {
           ),
           if (_ink.pen) _ink.toolbar(context, _refresh),
         ],
-      ),
-    );
-  }
-}
-
-// ───────────────────────── Sunum (.pptx) ─────────────────────────
-
-class SlidesScreen extends StatefulWidget {
-  final String path;
-  const SlidesScreen({super.key, required this.path});
-
-  @override
-  State<SlidesScreen> createState() => _SlidesScreenState();
-}
-
-class _SlidesScreenState extends State<SlidesScreen> {
-  late final Future<List<List<String>>> _future = _load();
-  final _controller = PageController();
-  late final InkSession _ink = InkSession(widget.path);
-  int _page = 0;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _ink.dispose();
-    super.dispose();
-  }
-
-  void _refresh() => setState(() {});
-
-  Future<List<List<String>>> _load() async {
-    final arc = await _readZip(widget.path);
-    final re = RegExp(r'^ppt/slides/slide(\d+)\.xml$');
-    final files = arc.files.where((f) => re.hasMatch(f.name)).toList()
-      ..sort((a, b) => int.parse(re.firstMatch(a.name)!.group(1)!)
-          .compareTo(int.parse(re.firstMatch(b.name)!.group(1)!)));
-    final slides = <List<String>>[];
-    for (final f in files) {
-      final doc = XmlDocument.parse(utf8.decode(f.content as List<int>));
-      final lines = <String>[];
-      for (final p in doc.findAllElements('a:p')) {
-        final t = p.findAllElements('a:t').map((e) => e.innerText).join();
-        if (t.trim().isNotEmpty) lines.add(t.trim());
-      }
-      slides.add(lines);
-    }
-    return slides;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pal = Pal.of(context);
-    _ink.adaptColor(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(fileTitle(widget.path), overflow: TextOverflow.ellipsis),
-        actions: [
-          _ink.penButton(context, _refresh),
-          ...fileActions(context, widget.path),
-        ],
-      ),
-      body: FutureBuilder<List<List<String>>>(
-        future: _future,
-        builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError || snap.data!.isEmpty) {
-            return _ErrorBox(
-              'Bu sunum okunamadı. Sağ üstteki düğmeyle başka bir uygulamada açabilirsin.',
-            );
-          }
-          final slides = snap.data!;
-          return Column(
-            children: [
-              Expanded(
-                child: _ink.watch(
-                  () => PageView.builder(
-                    controller: _controller,
-                    physics: _ink.physics,
-                    itemCount: slides.length,
-                    onPageChanged: (i) => setState(() => _page = i),
-                    itemBuilder: (_, i) {
-                      final lines = slides[i];
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: AspectRatio(
-                            aspectRatio: 16 / 9,
-                            child: _ink.overlay(
-                              page: i + 1,
-                              child: Container(
-                                padding: const EdgeInsets.all(18),
-                                decoration: BoxDecoration(
-                                  color: pal.card,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: pal.border),
-                                ),
-                                child: lines.isEmpty
-                                    ? const Center(child: Text('Bu slaytta metin yok'))
-                                    : ListView(
-                                        physics: const NeverScrollableScrollPhysics(),
-                                        children: [
-                                          Text(
-                                            lines.first,
-                                            style: const TextStyle(
-                                              fontSize: 20,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 10),
-                                          for (final l in lines.skip(1))
-                                            Padding(
-                                              padding: const EdgeInsets.only(bottom: 6),
-                                              child: Text('•  $l',
-                                                  style: const TextStyle(fontSize: 14)),
-                                            ),
-                                        ],
-                                      ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12, top: 4),
-                child: Text('Slayt ${_page + 1} / ${slides.length}'),
-              ),
-              if (_ink.pen) _ink.toolbar(context, _refresh),
-            ],
-          );
-        },
       ),
     );
   }

@@ -14,6 +14,9 @@ import '../services/pdf_export.dart';
 import '../services/recent_store.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/page_notes_button.dart';
+import '../widgets/quick_scroll_rail.dart';
+import '../widgets/share_with_notes_button.dart';
 
 enum _Menu { shareInk, shareOriginal, saveCopy, overwrite, clear, external }
 
@@ -29,6 +32,7 @@ class _PdfScreenState extends State<PdfScreen> {
   final _controller = PdfViewerController();
   InkModel? _model;
   bool _pen = false;
+  int _currentPage = 1;
 
   @override
   void initState() {
@@ -59,7 +63,7 @@ class _PdfScreenState extends State<PdfScreen> {
 
   void _go(int delta) {
     try {
-      final cur = (_controller.pageNumber as int?) ?? 1;
+      final cur = _controller.pageNumber ?? 1;
       final count = _pageCount ?? 9999;
       _controller.goToPage(pageNumber: (cur + delta).clamp(1, count));
     } catch (_) {}
@@ -80,13 +84,17 @@ class _PdfScreenState extends State<PdfScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.description_rounded),
-              title: Text(total == null ? 'Tüm sayfalar' : 'Tüm sayfalar ($total)'),
+              title: Text(
+                total == null ? 'Tüm sayfalar' : 'Tüm sayfalar ($total)',
+              ),
               onTap: () => Navigator.pop(ctx, false),
             ),
             ListTile(
               leading: const Icon(Icons.draw_rounded),
               title: Text('Sadece çizim yapılan sayfalar ($inked)'),
-              subtitle: const Text('Ders notu çıkarmak için ideal, dosya küçük olur'),
+              subtitle: const Text(
+                'Ders notu çıkarmak için ideal, dosya küçük olur',
+              ),
               onTap: () => Navigator.pop(ctx, true),
             ),
             const SizedBox(height: 8),
@@ -96,7 +104,9 @@ class _PdfScreenState extends State<PdfScreen> {
     );
   }
 
-  Future<T?> _withProgress<T>(Future<T> Function(ValueNotifier<String> msg) job) async {
+  Future<T?> _withProgress<T>(
+    Future<T> Function(ValueNotifier<String> msg) job,
+  ) async {
     final msg = ValueNotifier<String>('Hazırlanıyor…');
     showDialog<void>(
       context: context,
@@ -135,7 +145,8 @@ class _PdfScreenState extends State<PdfScreen> {
       outPath: out,
       onlyInked: onlyInked,
       totalPages: _pageCount,
-      onProgress: (d, t) => msg.value = t == null ? 'Sayfa $d işleniyor…' : 'Sayfa $d / $t',
+      onProgress: (d, t) =>
+          msg.value = t == null ? 'Sayfa $d işleniyor…' : 'Sayfa $d / $t',
     );
   }
 
@@ -202,8 +213,14 @@ class _PdfScreenState extends State<PdfScreen> {
           'Emin değilsen "Çizimli kopya kaydet"i kullan.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Vazgeç')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Üzerine yaz')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Üzerine yaz'),
+          ),
         ],
       ),
     );
@@ -236,8 +253,14 @@ class _PdfScreenState extends State<PdfScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Tüm çizimler silinsin mi?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Vazgeç')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sil')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sil'),
+          ),
         ],
       ),
     );
@@ -269,10 +292,17 @@ class _PdfScreenState extends State<PdfScreen> {
   @override
   Widget build(BuildContext context) {
     final model = _model;
+    final pageCount = _pageCount;
     return Scaffold(
       appBar: AppBar(
         title: Text(fileTitle(widget.path), overflow: TextOverflow.ellipsis),
         actions: [
+          ShareWithNotesButton(documentPath: widget.path),
+          PageNotesButton(
+            documentPath: widget.path,
+            pageKey: () => 'pdf-${_controller.pageNumber ?? 1}',
+            pageLabel: () => 'Sayfa ${_controller.pageNumber ?? 1}',
+          ),
           IconButton(
             tooltip: _pen ? 'Kaydırma moduna geç' : 'Kalemle yaz / çiz',
             isSelected: _pen,
@@ -343,25 +373,52 @@ class _PdfScreenState extends State<PdfScreen> {
           : Column(
               children: [
                 Expanded(
-                  child: PdfViewer.file(
-                    widget.path,
-                    controller: _controller,
-                    params: PdfViewerParams(
-                      backgroundColor: Pal.of(context).canvas,
-                      // Kalem modunda tek parmakla kaydırma kapanır,
-                      // iki parmakla yakınlaştırma açık kalır.
-                      panEnabled: !_pen,
-                      scaleEnabled: true,
-                      pageOverlaysBuilder: (context, pageRect, page) => [
-                        InkLayer(
-                          key: ValueKey('ink-${page.pageNumber}'),
-                          model: model,
-                          page: page.pageNumber,
-                          size: pageRect.size,
-                          onChanged: _save,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: PdfViewer.file(
+                          widget.path,
+                          controller: _controller,
+                          params: PdfViewerParams(
+                            backgroundColor: Pal.of(context).canvas,
+                            onPageChanged: (pageNumber) {
+                              final page =
+                                  pageNumber ?? _controller.pageNumber ?? 1;
+                              if (_currentPage == page || !mounted) return;
+                              setState(() => _currentPage = page);
+                            },
+                            // Kalem modunda tek parmakla kaydırma kapanır,
+                            // iki parmakla yakınlaştırma açık kalır.
+                            panEnabled: !_pen,
+                            scaleEnabled: true,
+                            pageOverlaysBuilder: (context, pageRect, page) => [
+                              InkLayer(
+                                key: ValueKey('ink-${page.pageNumber}'),
+                                model: model,
+                                page: page.pageNumber,
+                                size: pageRect.size,
+                                onChanged: _save,
+                              ),
+                            ],
+                          ),
                         ),
-                      ],
-                    ),
+                      ),
+                      if ((pageCount ?? 0) > 10)
+                        Positioned(
+                          right: 6,
+                          top: 0,
+                          bottom: 0,
+                          child: Center(
+                            child: QuickScrollRail(
+                              pageCount: pageCount,
+                              currentPage: _currentPage,
+                              onPageSelected: (page) {
+                                _controller.goToPage(pageNumber: page);
+                              },
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 if (_pen)

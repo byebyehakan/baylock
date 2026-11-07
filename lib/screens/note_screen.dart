@@ -10,6 +10,9 @@ import '../ink/ink_session.dart';
 import '../services/file_service.dart';
 import '../services/recent_store.dart';
 import '../widgets/common.dart';
+import '../widgets/page_notes_button.dart';
+import '../widgets/quick_scroll_rail.dart';
+import '../widgets/share_with_notes_button.dart';
 import 'viewer_router.dart';
 
 class NoteScreen extends StatefulWidget {
@@ -24,6 +27,7 @@ class NoteScreen extends StatefulWidget {
 class _NoteScreenState extends State<NoteScreen> {
   final _title = TextEditingController();
   final _body = TextEditingController();
+  final _bodyScrollController = ScrollController();
   String? _path;
   InkSession? _ink;
   bool _dirty = false;
@@ -43,6 +47,7 @@ class _NoteScreenState extends State<NoteScreen> {
   void dispose() {
     _title.dispose();
     _body.dispose();
+    _bodyScrollController.dispose();
     _ink?.dispose();
     super.dispose();
   }
@@ -101,14 +106,19 @@ class _NoteScreenState extends State<NoteScreen> {
     } catch (_) {}
 
     final doc = pw.Document(
-      theme: font != null ? pw.ThemeData.withFont(base: font, bold: font) : null,
+      theme: font != null
+          ? pw.ThemeData.withFont(base: font, bold: font)
+          : null,
     );
     doc.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(44),
         build: (_) => [
-          pw.Header(level: 0, text: _title.text.trim().isEmpty ? 'Not' : _title.text.trim()),
+          pw.Header(
+            level: 0,
+            text: _title.text.trim().isEmpty ? 'Not' : _title.text.trim(),
+          ),
           pw.Paragraph(
             text: _body.text,
             style: const pw.TextStyle(fontSize: 12, lineSpacing: 4),
@@ -133,9 +143,18 @@ class _NoteScreenState extends State<NoteScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Değişiklikleri kaydet?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, 'cancel'), child: const Text('Vazgeç')),
-          TextButton(onPressed: () => Navigator.pop(ctx, 'discard'), child: const Text('Kaydetme')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, 'save'), child: const Text('Kaydet')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'cancel'),
+            child: const Text('Vazgeç'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'discard'),
+            child: const Text('Kaydetme'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, 'save'),
+            child: const Text('Kaydet'),
+          ),
         ],
       ),
     );
@@ -159,6 +178,7 @@ class _NoteScreenState extends State<NoteScreen> {
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
       child: TextField(
         controller: _body,
+        scrollController: _bodyScrollController,
         maxLines: null,
         expands: true,
         autofocus: _isNew,
@@ -186,10 +206,20 @@ class _NoteScreenState extends State<NoteScreen> {
                     hintText: 'Başlık',
                     border: InputBorder.none,
                   ),
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
                 )
               : Text(fileTitle(_path!), overflow: TextOverflow.ellipsis),
           actions: [
+            if (_path != null)
+              PageNotesButton(
+                documentPath: _path!,
+                pageKey: () => 'note-1',
+                pageLabel: () => 'Not',
+              ),
+            if (_path != null) ShareWithNotesButton(documentPath: _path!),
             IconButton(
               tooltip: penOn ? 'Yazma moduna geç' : 'Kalemle çiz',
               isSelected: penOn,
@@ -219,9 +249,27 @@ class _NoteScreenState extends State<NoteScreen> {
             : Column(
                 children: [
                   Expanded(
-                    child: ink == null
-                        ? textArea
-                        : ink.watch(() => ink.overlay(page: 1, child: textArea)),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: ink == null
+                              ? textArea
+                              : ink.watch(
+                                  () => ink.overlay(page: 1, child: textArea),
+                                ),
+                        ),
+                        Positioned(
+                          right: 6,
+                          top: 0,
+                          bottom: 0,
+                          child: Center(
+                            child: QuickScrollRail(
+                              controller: _bodyScrollController,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   if (ink != null && ink.pen) ink.toolbar(context, _refresh),
                   Padding(
@@ -230,7 +278,10 @@ class _NoteScreenState extends State<NoteScreen> {
                       alignment: Alignment.centerRight,
                       child: Text(
                         '$words kelime',
-                        style: const TextStyle(color: Color(0xFF7A8594), fontSize: 12),
+                        style: const TextStyle(
+                          color: Color(0xFF7A8594),
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   ),
