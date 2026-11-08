@@ -30,7 +30,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # Türkçe karakterli PDF çıktısı için: NotoSans-Regular.ttf dosyasını
-  # assets/fonts/ klasörüne koyduktan sonra aşağıdaki satırları aç.
-  # assets:
-  #   - assets/fonts/NotoSans-Regular.ttf

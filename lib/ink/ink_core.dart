@@ -21,7 +21,13 @@ enum InkTool {
   arrow('Ok', Icons.arrow_right_alt_rounded, 1.0, 1.0, kind: ToolKind.shape),
   rect('Kutu', Icons.crop_square_rounded, 1.0, 1.0, kind: ToolKind.shape),
   ellipse('Elips', Icons.circle_outlined, 1.0, 1.0, kind: ToolKind.shape),
-  eraser('Silgi', Icons.auto_fix_normal_rounded, 1.0, 1.0, kind: ToolKind.eraser);
+  eraser(
+    'Silgi',
+    Icons.auto_fix_normal_rounded,
+    1.0,
+    1.0,
+    kind: ToolKind.eraser,
+  );
 
   const InkTool(
     this.label,
@@ -61,20 +67,21 @@ class InkStroke {
     required this.width,
     List<Offset>? pts,
     List<double>? pressure,
-  })  : pts = pts ?? <Offset>[],
-        pressure = pressure ?? <double>[];
+  }) : pts = pts ?? <Offset>[],
+       pressure = pressure ?? <double>[];
 
   static double _r(double v) => (v * 10000).round() / 10000;
 
   Map<String, dynamic> toJson() => {
-        'k': tool.name,
-        'c': color,
-        'w': _r(width),
-        'p': [
-          for (final o in pts) ...[_r(o.dx), _r(o.dy)],
-        ],
-        if (pressure.isNotEmpty) 'q': [for (final v in pressure) (v * 100).round() / 100],
-      };
+    'k': tool.name,
+    'c': color,
+    'w': _r(width),
+    'p': [
+      for (final o in pts) ...[_r(o.dx), _r(o.dy)],
+    ],
+    if (pressure.isNotEmpty)
+      'q': [for (final v in pressure) (v * 100).round() / 100],
+  };
 
   factory InkStroke.fromJson(Map<String, dynamic> j) {
     final f = (j['p'] as List).cast<num>();
@@ -114,10 +121,11 @@ class _Action {
 
 class InkModel extends ChangeNotifier {
   final Map<int, List<InkStroke>> strokes;
+  final Map<int, int> _pageRevisions = {};
   InkModel([Map<int, List<InkStroke>>? initial]) : strokes = initial ?? {};
 
   bool pen = false; // true: kalem katmanı dokunuşları alır
-  bool finger = false; // parmakla da çiz
+  bool finger = true; // parmakla çizim varsayılan olarak açık
   InkTool tool = InkTool.ballpoint;
   Color color = const Color(0xFF14202F);
   double width = 3;
@@ -128,9 +136,17 @@ class InkModel extends ChangeNotifier {
   bool get canUndo => _history.isNotEmpty;
   bool get canRedo => _redo.isNotEmpty;
   bool get hasInk => strokes.values.any((l) => l.isNotEmpty);
+  int revisionForPage(int page) => _pageRevisions[page] ?? 0;
+
+  void _markPageChanged(int page) {
+    _pageRevisions.update(page, (revision) => revision + 1, ifAbsent: () => 1);
+  }
 
   List<int> get inkPages =>
-      (strokes.entries.where((e) => e.value.isNotEmpty).map((e) => e.key).toList()
+      (strokes.entries
+          .where((e) => e.value.isNotEmpty)
+          .map((e) => e.key)
+          .toList()
         ..sort());
 
   List<InkStroke> of(int page) => strokes[page] ?? const [];
@@ -144,6 +160,7 @@ class InkModel extends ChangeNotifier {
     (strokes[page] ??= []).add(s);
     _history.add(_Action(page, s, true));
     _redo.clear();
+    _markPageChanged(page);
     notifyListeners();
   }
 
@@ -152,15 +169,24 @@ class InkModel extends ChangeNotifier {
     if (list == null || list.isEmpty) return false;
     final hit = <InkStroke>[];
     for (final s in list) {
-      final o = outlineOf(s)
-          .map((n) => Offset(n.dx * size.width, n.dy * size.height))
-          .toList();
+      final points = s.tool.kind == ToolKind.shape ? outlineOf(s) : s.pts;
       var near = false;
-      if (o.length == 1) {
-        near = (o.first - local).distance < radius;
+      if (points.length == 1) {
+        final point = points.first;
+        near =
+            (Offset(point.dx * size.width, point.dy * size.height) - local)
+                .distance <
+            radius;
       } else {
-        for (var i = 1; i < o.length; i++) {
-          if (_segDist(local, o[i - 1], o[i]) < radius) {
+        for (var i = 1; i < points.length; i++) {
+          final previous = points[i - 1];
+          final current = points[i];
+          if (_segDist(
+                local,
+                Offset(previous.dx * size.width, previous.dy * size.height),
+                Offset(current.dx * size.width, current.dy * size.height),
+              ) <
+              radius) {
             near = true;
             break;
           }
@@ -174,6 +200,7 @@ class InkModel extends ChangeNotifier {
       _history.add(_Action(page, s, false));
     }
     _redo.clear();
+    _markPageChanged(page);
     notifyListeners();
     return true;
   }
@@ -184,6 +211,7 @@ class InkModel extends ChangeNotifier {
     final list = strokes[a.page] ??= [];
     a.added ? list.remove(a.stroke) : list.add(a.stroke);
     _redo.add(a);
+    _markPageChanged(a.page);
     notifyListeners();
   }
 
@@ -193,10 +221,14 @@ class InkModel extends ChangeNotifier {
     final list = strokes[a.page] ??= [];
     a.added ? list.add(a.stroke) : list.remove(a.stroke);
     _history.add(a);
+    _markPageChanged(a.page);
     notifyListeners();
   }
 
   void clearAll() {
+    for (final page in strokes.keys) {
+      _markPageChanged(page);
+    }
     strokes.clear();
     _history.clear();
     _redo.clear();
@@ -227,8 +259,10 @@ List<Offset> outlineOf(InkStroke s) {
       final ry = (b.dy - a.dy).abs() / 2;
       return [
         for (var i = 0; i <= 32; i++)
-          Offset(c.dx + rx * math.cos(i / 32 * 2 * math.pi),
-              c.dy + ry * math.sin(i / 32 * 2 * math.pi)),
+          Offset(
+            c.dx + rx * math.cos(i / 32 * 2 * math.pi),
+            c.dy + ry * math.sin(i / 32 * 2 * math.pi),
+          ),
       ];
     default:
       return [a, b];
@@ -271,7 +305,9 @@ void _paintStroke(Canvas canvas, Size size, InkStroke s) {
   final tool = s.tool;
   final base = s.width * size.width;
   final color = Color(s.color | 0xFF000000).withValues(alpha: tool.alpha);
-  final pts = [for (final o in s.pts) Offset(o.dx * size.width, o.dy * size.height)];
+  final pts = [
+    for (final o in s.pts) Offset(o.dx * size.width, o.dy * size.height),
+  ];
 
   final paint = Paint()
     ..color = color
@@ -347,16 +383,31 @@ void _paintStroke(Canvas canvas, Size size, InkStroke s) {
 
 class _InkPainter extends CustomPainter {
   final List<InkStroke> strokes;
-  final InkStroke? live;
-  _InkPainter(this.strokes, this.live);
+  final int revision;
+
+  _InkPainter(this.strokes, this.revision);
+
+  @override
+  void paint(Canvas canvas, Size size) => paintInk(canvas, size, strokes);
+
+  @override
+  bool shouldRepaint(_InkPainter old) => revision != old.revision;
+}
+
+class _LiveInkPainter extends CustomPainter {
+  final InkStroke? stroke;
+  final int revision;
+
+  _LiveInkPainter(this.stroke, this.revision);
 
   @override
   void paint(Canvas canvas, Size size) {
-    paintInk(canvas, size, [...strokes, if (live != null) live!]);
+    final current = stroke;
+    if (current != null) paintInk(canvas, size, [current]);
   }
 
   @override
-  bool shouldRepaint(_InkPainter old) => true;
+  bool shouldRepaint(_LiveInkPainter old) => revision != old.revision;
 }
 
 // ───────────────────────── Sayfa katmanı ─────────────────────────
@@ -384,6 +435,7 @@ class _InkLayerState extends State<InkLayer> {
   int? _pointer;
   InkStroke? _live;
   double _lastP = 0.5;
+  int _liveRevision = 0;
 
   bool _accept(PointerEvent e) {
     switch (e.kind) {
@@ -399,9 +451,9 @@ class _InkLayerState extends State<InkLayer> {
   }
 
   Offset _norm(PointerEvent e) => Offset(
-        (e.localPosition.dx / widget.size.width).clamp(0.0, 1.0),
-        (e.localPosition.dy / widget.size.height).clamp(0.0, 1.0),
-      );
+    (e.localPosition.dx / widget.size.width).clamp(0.0, 1.0),
+    (e.localPosition.dy / widget.size.height).clamp(0.0, 1.0),
+  );
 
   double _pressure(PointerEvent e) {
     final min = e.pressureMin;
@@ -438,7 +490,10 @@ class _InkLayerState extends State<InkLayer> {
       width: (m.width * m.tool.widthMul) / widget.size.width,
     )..pts.add(_norm(e));
     if (m.tool.pressure) stroke.pressure.add(_pressure(e));
-    setState(() => _live = stroke);
+    setState(() {
+      _live = stroke;
+      _liveRevision++;
+    });
   }
 
   void _move(PointerMoveEvent e) {
@@ -460,6 +515,7 @@ class _InkLayerState extends State<InkLayer> {
         s.pts.add(_norm(e));
         if (s.tool.pressure) s.pressure.add(_pressure(e));
       }
+      _liveRevision++;
     });
   }
 
@@ -474,7 +530,7 @@ class _InkLayerState extends State<InkLayer> {
       widget.model.add(widget.page, s);
       widget.onChanged();
     }
-    setState(() {});
+    setState(() => _liveRevision++);
   }
 
   @override
@@ -493,9 +549,25 @@ class _InkLayerState extends State<InkLayer> {
               onPointerMove: _move,
               onPointerUp: _up,
               onPointerCancel: _up,
-              child: CustomPaint(
-                size: widget.size,
-                painter: _InkPainter(widget.model.of(widget.page), _live),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  RepaintBoundary(
+                    child: CustomPaint(
+                      size: widget.size,
+                      painter: _InkPainter(
+                        widget.model.of(widget.page),
+                        widget.model.revisionForPage(widget.page),
+                      ),
+                    ),
+                  ),
+                  RepaintBoundary(
+                    child: CustomPaint(
+                      size: widget.size,
+                      painter: _LiveInkPainter(_live, _liveRevision),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -534,13 +606,19 @@ Future<Color?> pickInkColor(BuildContext context, Color initial) {
       return StatefulBuilder(
         builder: (ctx, setS) {
           final c = hsv.toColor();
-          Widget slider(String label, double v, double max, ValueChanged<double> f) =>
-              Row(
-                children: [
-                  SizedBox(width: 78, child: Text(label)),
-                  Expanded(child: Slider(value: v, min: 0, max: max, onChanged: f)),
-                ],
-              );
+          Widget slider(
+            String label,
+            double v,
+            double max,
+            ValueChanged<double> f,
+          ) => Row(
+            children: [
+              SizedBox(width: 78, child: Text(label)),
+              Expanded(
+                child: Slider(value: v, min: 0, max: max, onChanged: f),
+              ),
+            ],
+          );
           return SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
@@ -555,10 +633,24 @@ Future<Color?> pickInkColor(BuildContext context, Color initial) {
                       border: Border.all(color: Pal.of(ctx).border),
                     ),
                   ),
-                  slider('Renk tonu', hsv.hue, 360, (v) => setS(() => hsv = hsv.withHue(v))),
-                  slider('Canlılık', hsv.saturation, 1,
-                      (v) => setS(() => hsv = hsv.withSaturation(v))),
-                  slider('Koyuluk', hsv.value, 1, (v) => setS(() => hsv = hsv.withValue(v))),
+                  slider(
+                    'Renk tonu',
+                    hsv.hue,
+                    360,
+                    (v) => setS(() => hsv = hsv.withHue(v)),
+                  ),
+                  slider(
+                    'Canlılık',
+                    hsv.saturation,
+                    1,
+                    (v) => setS(() => hsv = hsv.withSaturation(v)),
+                  ),
+                  slider(
+                    'Koyuluk',
+                    hsv.value,
+                    1,
+                    (v) => setS(() => hsv = hsv.withValue(v)),
+                  ),
                   Align(
                     alignment: Alignment.centerRight,
                     child: FilledButton(
@@ -593,7 +685,24 @@ class InkToolbar extends StatefulWidget {
 }
 
 class _InkToolbarState extends State<InkToolbar> {
-  bool _expanded = true;
+  static const _quickTools = [
+    InkTool.ballpoint,
+    InkTool.highlighter,
+    InkTool.pencil,
+    InkTool.eraser,
+  ];
+  static const _otherTools = [
+    InkTool.fountain,
+    InkTool.brush,
+    InkTool.marker,
+    InkTool.dashed,
+    InkTool.line,
+    InkTool.arrow,
+    InkTool.rect,
+    InkTool.ellipse,
+  ];
+
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -614,73 +723,41 @@ class _InkToolbarState extends State<InkToolbar> {
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(height: 8),
-                // 1) Araçlar
                 SizedBox(
-                  height: 56,
+                  height: 58,
                   child: ListView(
                     scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    children: [for (final t in InkTool.values) _toolChip(t, m, scheme)],
-                  ),
-                ),
-                if (_expanded) ...[
-                  const SizedBox(height: 8),
-                  // 2) Renkler
-                  SizedBox(
-                    height: 38,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      children: [
-                        for (final c in inkPalette) _swatch(c, m, scheme),
-                        _customColor(m),
-                      ],
-                    ),
-                  ),
-                  // 3) Kalınlık
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 44,
-                          height: 40,
-                          child: Center(child: _sizePreview(m)),
-                        ),
-                        Expanded(
-                          child: Slider(
-                            value: m.width,
-                            min: 1,
-                            max: 24,
-                            onChanged: (v) => m.update(() => m.width = v),
-                          ),
-                        ),
-                        SizedBox(
-                          width: 28,
-                          child: Text(
-                            '${m.width.round()}',
-                            textAlign: TextAlign.right,
-                            style: TextStyle(color: pal.muted),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                // 4) Eylemler
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-                  child: Row(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     children: [
-                      IconButton(
-                        tooltip: _expanded ? 'Daralt' : 'Genişlet',
-                        onPressed: () => setState(() => _expanded = !_expanded),
-                        icon: Icon(_expanded
-                            ? Icons.keyboard_arrow_down_rounded
-                            : Icons.keyboard_arrow_up_rounded),
+                      for (final tool in _quickTools)
+                        _quickTool(tool, m, scheme),
+                      const VerticalDivider(
+                        width: 14,
+                        indent: 12,
+                        endIndent: 12,
                       ),
-                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: () => _chooseTool(m),
+                        icon: Icon(m.tool.icon, size: 18),
+                        label: Text(
+                          _quickTools.contains(m.tool) ? 'Diğer' : m.tool.label,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Renk seç',
+                        onPressed: () async {
+                          final color = await pickInkColor(context, m.color);
+                          if (color != null) {
+                            m.update(() {
+                              m.color = color;
+                              if (m.tool.kind == ToolKind.eraser) {
+                                m.tool = InkTool.ballpoint;
+                              }
+                            });
+                          }
+                        },
+                        icon: _colorPreview(m),
+                      ),
                       IconButton(
                         tooltip: 'Geri al',
                         onPressed: m.canUndo
@@ -702,21 +779,77 @@ class _InkToolbarState extends State<InkToolbar> {
                         icon: const Icon(Icons.redo_rounded),
                       ),
                       IconButton(
-                        tooltip: 'Parmakla da çiz',
-                        isSelected: m.finger,
-                        style: m.finger
-                            ? IconButton.styleFrom(
-                                backgroundColor: scheme.primary,
-                                foregroundColor: Colors.white,
-                              )
-                            : null,
-                        onPressed: () => m.update(() => m.finger = !m.finger),
-                        icon: const Icon(Icons.touch_app_rounded),
+                        tooltip: _expanded
+                            ? 'Ayarları gizle'
+                            : 'Kalem ayarları',
+                        onPressed: () => setState(() => _expanded = !_expanded),
+                        icon: Icon(
+                          _expanded
+                              ? Icons.keyboard_arrow_down_rounded
+                              : Icons.tune_rounded,
+                        ),
                       ),
-                      ...widget.extra,
                     ],
                   ),
                 ),
+                if (_expanded) ...[
+                  SizedBox(
+                    height: 38,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      children: [
+                        for (final c in inkPalette) _swatch(c, m, scheme),
+                        _customColor(m),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(
+                      children: [
+                        SizedBox(width: 34, child: _sizePreview(m)),
+                        const SizedBox(width: 8),
+                        const Text('Kalınlık'),
+                        Expanded(
+                          child: Slider(
+                            value: m.width,
+                            min: 1,
+                            max: 24,
+                            onChanged: (v) => m.update(() => m.width = v),
+                          ),
+                        ),
+                        Text(
+                          '${m.width.round()}',
+                          style: TextStyle(color: pal.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => m.update(() => m.finger = !m.finger),
+                      icon: Icon(
+                        m.finger
+                            ? Icons.touch_app_rounded
+                            : Icons.pan_tool_alt_rounded,
+                      ),
+                      label: Text(
+                        m.finger ? 'Parmakla çizim açık' : 'Parmakla çizim',
+                      ),
+                    ),
+                  ),
+                ],
+                if (widget.extra.isNotEmpty)
+                  SizedBox(
+                    height: 46,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      children: widget.extra,
+                    ),
+                  ),
               ],
             );
           },
@@ -725,37 +858,73 @@ class _InkToolbarState extends State<InkToolbar> {
     );
   }
 
-  Widget _toolChip(InkTool t, InkModel m, ColorScheme scheme) {
+  Widget _quickTool(InkTool t, InkModel m, ColorScheme scheme) {
     final sel = m.tool == t;
     return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: Material(
-        color: sel ? scheme.primary : scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () => m.update(() => m.tool = t),
-          child: SizedBox(
-            width: 62,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(t.icon, size: 22, color: sel ? Colors.white : scheme.onSurface),
-                const SizedBox(height: 2),
-                Text(
-                  t.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: sel ? Colors.white : scheme.onSurface,
-                  ),
-                ),
-              ],
-            ),
-          ),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+      child: IconButton(
+        tooltip: t.label,
+        isSelected: sel,
+        style: IconButton.styleFrom(
+          backgroundColor: sel ? scheme.primary : Colors.transparent,
+          foregroundColor: sel ? scheme.onPrimary : scheme.onSurfaceVariant,
         ),
+        onPressed: () => m.update(() => m.tool = t),
+        icon: Icon(t.icon),
+      ),
+    );
+  }
+
+  Future<void> _chooseTool(InkModel model) async {
+    final selected = await showModalBottomSheet<InkTool>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(
+              title: Text(
+                'Kalemler',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            for (final tool in _otherTools.where(
+              (tool) => tool.kind == ToolKind.freehand,
+            ))
+              _toolListTile(tool, model),
+            const ListTile(
+              title: Text(
+                'Şekiller',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            for (final tool in _otherTools.where(
+              (tool) => tool.kind == ToolKind.shape,
+            ))
+              _toolListTile(tool, model),
+          ],
+        ),
+      ),
+    );
+    if (selected != null) model.update(() => model.tool = selected);
+  }
+
+  Widget _toolListTile(InkTool tool, InkModel model) => ListTile(
+    leading: Icon(tool.icon),
+    title: Text(tool.label),
+    trailing: model.tool == tool ? const Icon(Icons.check_rounded) : null,
+    onTap: () => Navigator.pop(context, tool),
+  );
+
+  Widget _colorPreview(InkModel model) {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: model.color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Pal.of(context).border, width: 2),
       ),
     );
   }
@@ -800,10 +969,17 @@ class _InkToolbarState extends State<InkToolbar> {
         margin: const EdgeInsets.only(right: 8, top: 3, bottom: 3),
         decoration: const BoxDecoration(
           shape: BoxShape.circle,
-          gradient: SweepGradient(colors: [
-            Colors.red, Colors.yellow, Colors.green, Colors.cyan,
-            Colors.blue, Colors.purple, Colors.red,
-          ]),
+          gradient: SweepGradient(
+            colors: [
+              Colors.red,
+              Colors.yellow,
+              Colors.green,
+              Colors.cyan,
+              Colors.blue,
+              Colors.purple,
+              Colors.red,
+            ],
+          ),
         ),
         child: const Icon(Icons.add_rounded, size: 18, color: Colors.white),
       ),

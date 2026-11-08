@@ -45,6 +45,13 @@ void main() {
   </p:cSld>
 </p:sld>
 '''),
+      )
+      ..addFile(
+        ArchiveFile(
+          'unused/large-data.bin',
+          300000,
+          _pseudoRandomBytes(300000),
+        ),
       );
 
     final directory = await Directory.systemTemp.createTemp('pptx-test-');
@@ -58,6 +65,14 @@ void main() {
     expect(result.slides.single.elements, hasLength(1));
     final PptxElement element = result.slides.single.elements.single;
     expect(element.paragraphs.single.runs.single.text, 'Sunum içeriği');
+  });
+}
+
+List<int> _pseudoRandomBytes(int length) {
+  var value = 0x12345678;
+  return List<int>.generate(length, (_) {
+    value = (value * 1664525 + 1013904223) & 0xFFFFFFFF;
+    return value >> 24;
   });
 }
 

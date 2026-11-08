@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final themeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
+const defaultAccentColor = Color(0xFF1E3A5F);
+final accentColor = ValueNotifier<Color>(defaultAccentColor);
+final appAppearance = Listenable.merge([themeMode, accentColor]);
 
 Future<void> loadThemeMode() async {
   final sp = await SharedPreferences.getInstance();
@@ -10,12 +13,21 @@ Future<void> loadThemeMode() async {
     'light' => ThemeMode.light,
     _ => ThemeMode.system,
   };
+  accentColor.value = Color(
+    sp.getInt('accent_color') ?? defaultAccentColor.toARGB32(),
+  );
 }
 
 Future<void> setThemeMode(ThemeMode m) async {
   themeMode.value = m;
   final sp = await SharedPreferences.getInstance();
   await sp.setString('theme_mode', m.name);
+}
+
+Future<void> setAccentColor(Color color) async {
+  accentColor.value = color;
+  final sp = await SharedPreferences.getInstance();
+  await sp.setInt('accent_color', color.toARGB32());
 }
 
 /// Elle yazılmış renklerin yerine geçen palet.
@@ -55,18 +67,13 @@ class Pal {
       Theme.of(c).brightness == Brightness.dark ? dark : light;
 }
 
-ThemeData buildTheme(Brightness b) {
+ThemeData buildTheme(Brightness b, {Color seedColor = defaultAccentColor}) {
   final isDark = b == Brightness.dark;
   final pal = isDark ? Pal.dark : Pal.light;
-  const ink = Color(0xFF1E3A5F);
 
-  var scheme = ColorScheme.fromSeed(seedColor: ink, brightness: b);
+  var scheme = ColorScheme.fromSeed(seedColor: seedColor, brightness: b);
   scheme = isDark
-      ? scheme.copyWith(
-          primary: const Color(0xFF3F74C0), // beyaz yazı okunsun diye orta mavi
-          onPrimary: Colors.white,
-          surface: const Color(0xFF12171D),
-        )
+      ? scheme.copyWith(surface: const Color(0xFF12171D))
       : scheme.copyWith(surface: const Color(0xFFF6F7F9));
 
   return ThemeData(
@@ -85,8 +92,8 @@ ThemeData buildTheme(Brightness b) {
       ),
     ),
     floatingActionButtonTheme: FloatingActionButtonThemeData(
-      backgroundColor: isDark ? scheme.primary : ink,
-      foregroundColor: Colors.white,
+      backgroundColor: scheme.primary,
+      foregroundColor: scheme.onPrimary,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
     ),
     snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),

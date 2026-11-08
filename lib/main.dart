@@ -16,16 +16,17 @@ class BaylockApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: themeMode,
-      builder: (_, mode, __) => MaterialApp(
+    return AnimatedBuilder(
+      animation: appAppearance,
+      builder: (_, __) => MaterialApp(
         title: 'Baylock',
         debugShowCheckedModeBanner: false,
-        theme: buildTheme(Brightness.light),
-        darkTheme: buildTheme(Brightness.dark),
-        themeMode: mode, // varsayılan: telefonun ayarı
+        themeAnimationDuration: Duration.zero,
+        theme: buildTheme(Brightness.light, seedColor: accentColor.value),
+        darkTheme: buildTheme(Brightness.dark, seedColor: accentColor.value),
+        themeMode: themeMode.value,
         home: const HomeScreen(),
       ),
     );
   }
-}
+}  

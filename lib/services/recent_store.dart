@@ -8,7 +8,16 @@ class RecentStore {
   static Future<List<String>> load() async {
     final sp = await SharedPreferences.getInstance();
     final list = sp.getStringList(_key) ?? [];
-    return list.where((e) => File(e).existsSync()).toList();
+    final existing = await Future.wait(
+      list.map((path) async {
+        try {
+          return await File(path).exists() ? path : null;
+        } on FileSystemException {
+          return null;
+        }
+      }),
+    );
+    return existing.whereType<String>().toList();
   }
 
   static Future<void> add(String path) async {

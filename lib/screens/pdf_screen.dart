@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -9,8 +10,10 @@ import 'package:share_plus/share_plus.dart';
 
 import '../ink/ink_core.dart';
 import '../services/annotation_store.dart';
+import '../services/document_navigation_store.dart';
 import '../services/file_service.dart';
 import '../services/pdf_export.dart';
+import '../services/page_notes_store.dart';
 import '../services/recent_store.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
@@ -18,7 +21,15 @@ import '../widgets/page_notes_button.dart';
 import '../widgets/quick_scroll_rail.dart';
 import '../widgets/share_with_notes_button.dart';
 
-enum _Menu { shareInk, shareOriginal, saveCopy, overwrite, clear, external }
+enum _Menu {
+  shareInk,
+  shareOriginal,
+  saveCopy,
+  overwrite,
+  exportWithNotes,
+  clear,
+  external,
+}
 
 class PdfScreen extends StatefulWidget {
   final String path;
@@ -30,14 +41,43 @@ class PdfScreen extends StatefulWidget {
 
 class _PdfScreenState extends State<PdfScreen> {
   final _controller = PdfViewerController();
+  final _searchController = TextEditingController();
+  final _navigationStore = const DocumentNavigationStore();
+  final _notesStore = const PageNotesStore();
   InkModel? _model;
+  PdfTextSearcher? _textSearcher;
   bool _pen = false;
+  bool _manualZoom = false;
+  bool _showSearch = false;
+  bool _restoringPosition = true;
   int _currentPage = 1;
+  Set<int> _bookmarks = {};
+  Timer? _positionSaveTimer;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadBookmarks();
+  }
+
+  @override
+  void dispose() {
+    _positionSaveTimer?.cancel();
+    unawaited(_savePositionOnDispose());
+    _searchController.dispose();
+    _textSearcher?.dispose();
+    _model?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _savePositionOnDispose() async {
+    if (_restoringPosition) return;
+    try {
+      await _navigationStore.saveLastPage(widget.path, _currentPage);
+    } catch (error) {
+      debugPrint('Okuma konumu kapatılırken kaydedilemedi: $error');
+    }
   }
 
   Future<void> _load() async {
@@ -47,6 +87,198 @@ class _PdfScreenState extends State<PdfScreen> {
   }
 
   void _save() => AnnotationStore.save(widget.path, _model!.strokes);
+
+  void _onSearchUpdated() {
+    if (mounted) setState(() {});
+  }
+
+  void _initializeTextSearcher() {
+    if (_textSearcher != null || !_controller.isReady) return;
+    final searcher = PdfTextSearcher(_controller)
+      ..addListener(_onSearchUpdated);
+    setState(() => _textSearcher = searcher);
+  }
+
+  void _paintSearchMatches(Canvas canvas, Rect pageRect, PdfPage page) {
+    _textSearcher?.pageTextMatchPaintCallback(canvas, pageRect, page);
+  }
+
+  Future<void> _restorePosition() async {
+    try {
+      final page = await _navigationStore.lastPage(widget.path);
+      if (page != null && page > 1 && page <= (_pageCount ?? 0)) {
+        await _controller.goToPage(pageNumber: page, duration: Duration.zero);
+      }
+    } catch (error) {
+      if (mounted) toast(context, 'Son sayfa açılamadı: $error');
+    } finally {
+      _restoringPosition = false;
+    }
+  }
+
+  Future<void> _loadBookmarks() async {
+    try {
+      final pages = await _navigationStore.bookmarks(widget.path);
+      final pageCount = _pageCount;
+      if (mounted) {
+        setState(
+          () => _bookmarks = pages
+              .where((page) => pageCount == null || page <= pageCount)
+              .toSet(),
+        );
+      }
+    } catch (error) {
+      if (mounted) toast(context, 'Yer imleri yüklenemedi: $error');
+    }
+  }
+
+  void _schedulePositionSave(int page) {
+    if (_restoringPosition) return;
+    _positionSaveTimer?.cancel();
+    _positionSaveTimer = Timer(const Duration(milliseconds: 350), () async {
+      try {
+        await _navigationStore.saveLastPage(widget.path, page);
+      } catch (error) {
+        if (mounted) toast(context, 'Okuma konumu kaydedilemedi: $error');
+      }
+    });
+  }
+
+  Future<void> _toggleCurrentBookmark() async {
+    try {
+      final isBookmarked = await _navigationStore.toggleBookmark(
+        widget.path,
+        _currentPage,
+      );
+      if (mounted) {
+        setState(() {
+          if (isBookmarked) {
+            _bookmarks.add(_currentPage);
+          } else {
+            _bookmarks.remove(_currentPage);
+          }
+        });
+      }
+    } catch (error) {
+      if (mounted) toast(context, 'Yer imi kaydedilemedi: $error');
+    }
+  }
+
+  Future<void> _showBookmarks() async {
+    final count = _pageCount;
+    final pages =
+        _bookmarks.where((page) => count == null || page <= count).toList()
+          ..sort();
+    if (pages.isEmpty) {
+      toast(context, 'Henüz yer imi eklenmedi');
+      return;
+    }
+    final page = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(
+              title: Text(
+                'Yer imleri',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            for (final page in pages)
+              ListTile(
+                leading: const Icon(Icons.bookmark_outline_rounded),
+                title: Text('Sayfa $page'),
+                onTap: () => Navigator.pop(context, page),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (page != null) {
+      await _controller.goToPage(pageNumber: page);
+    }
+  }
+
+  void _onSearchChanged(String query) {
+    final searcher = _textSearcher;
+    if (searcher == null) return;
+    final normalized = query.trim();
+    if (normalized.isEmpty) {
+      searcher.resetTextSearch();
+      return;
+    }
+    searcher.startTextSearch(normalized);
+  }
+
+  void _moveSearch(int delta) {
+    final searcher = _textSearcher;
+    if (searcher == null) return;
+    final matches = searcher.matches;
+    if (matches.isEmpty) return;
+    final current = searcher.currentIndex ?? 0;
+    final next = (current + delta + matches.length) % matches.length;
+    searcher.goToMatchOfIndex(next);
+  }
+
+  Future<void> _exportWithNotes() async {
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Notlarla PDF oluştur'),
+          content: const Text(
+            'Orijinal PDF değişmeden kalır. Yeni PDF’e çizimler işlenir ve '
+            'sayfa notları sona eklenir. Çizimlerle birleştirilen kaynak '
+            'sayfalar görüntü olacağından metin seçilemez olur.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Vazgeç'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('PDF oluştur'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      final pageCount = _pageCount ?? 0;
+      final notes = await _notesStore.loadAll(
+        widget.path,
+        legacyPageKeys: [
+          for (var page = 1; page <= pageCount; page++) 'pdf-$page',
+        ],
+      );
+      final output = await FileService.uniquePath(
+        (await FileService.docsDir()).path,
+        '${p.basenameWithoutExtension(widget.path)} (notlarla).pdf',
+      );
+      final saved = await _withProgress<String>((msg) async {
+        await exportAnnotatedPdf(
+          srcPath: widget.path,
+          strokes: _model!.strokes,
+          outPath: output,
+          totalPages: pageCount,
+          notesByPage: notes,
+          onProgress: (done, total) {
+            msg.value = total == null
+                ? 'PDF sayfası $done işleniyor…'
+                : 'PDF sayfası $done / $total işleniyor…';
+          },
+        );
+        return output;
+      });
+      if (saved == null || !mounted) return;
+      await RecentStore.add(saved);
+      if (mounted) toast(context, 'Notlar PDF olarak kaydedildi');
+    } catch (error) {
+      if (mounted) toast(context, 'Notlarla PDF oluşturulamadı: $error');
+    }
+  }
 
   void _togglePen() {
     setState(() => _pen = !_pen);
@@ -61,12 +293,32 @@ class _PdfScreenState extends State<PdfScreen> {
     }
   }
 
+  String get _searchMatchCountLabel {
+    final searcher = _textSearcher;
+    if (searcher == null) return '0/0';
+    final currentIndex = searcher.currentIndex;
+    return '${currentIndex == null ? 0 : currentIndex + 1}/${searcher.matches.length}';
+  }
+
   void _go(int delta) {
     try {
       final cur = _controller.pageNumber ?? 1;
       final count = _pageCount ?? 9999;
       _controller.goToPage(pageNumber: (cur + delta).clamp(1, count));
     } catch (_) {}
+  }
+
+  Future<void> _fitCurrentPageWidth() async {
+    _manualZoom = false;
+    final matrix = _controller.calcMatrixFitWidthForPage(
+      pageNumber: _currentPage,
+    );
+    if (matrix != null) {
+      await _controller.goTo(
+        matrix,
+        duration: const Duration(milliseconds: 180),
+      );
+    }
   }
 
   // ───────────── dışa aktarma ─────────────
@@ -280,11 +532,119 @@ class _PdfScreenState extends State<PdfScreen> {
         _saveCopy();
       case _Menu.overwrite:
         _overwrite();
+      case _Menu.exportWithNotes:
+        _exportWithNotes();
       case _Menu.clear:
         _clear();
       case _Menu.external:
         OpenFilex.open(widget.path);
     }
+  }
+
+  Widget _buildPdfToolbar(BuildContext context) {
+    final theme = Theme.of(context);
+    final isBookmarked = _bookmarks.contains(_currentPage);
+
+    Widget action({
+      required IconData icon,
+      required String label,
+      required VoidCallback? onPressed,
+      bool selected = false,
+    }) {
+      final style = ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        ),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+      final button = selected
+          ? FilledButton.tonalIcon(
+              onPressed: onPressed,
+              style: style,
+              icon: Icon(icon, size: 18),
+              label: Text(label),
+            )
+          : OutlinedButton.icon(
+              onPressed: onPressed,
+              style: style,
+              icon: Icon(icon, size: 18),
+              label: Text(label),
+            );
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: button,
+      );
+    }
+
+    return Material(
+      color: theme.colorScheme.surface,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: theme.colorScheme.outlineVariant),
+          ),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          child: Row(
+            children: [
+              action(
+                icon: Icons.draw_rounded,
+                label: _pen ? 'Kaydır' : 'Çizim',
+                selected: _pen,
+                onPressed: _model == null ? null : _togglePen,
+              ),
+              action(
+                icon: Icons.search_rounded,
+                label: 'Ara',
+                selected: _showSearch,
+                onPressed: _textSearcher == null
+                    ? null
+                    : () => setState(() => _showSearch = !_showSearch),
+              ),
+              action(
+                icon: isBookmarked
+                    ? Icons.bookmark_rounded
+                    : Icons.bookmark_add_outlined,
+                label: isBookmarked ? 'Yer imi' : 'Yer imi ekle',
+                selected: isBookmarked,
+                onPressed: _toggleCurrentBookmark,
+              ),
+              action(
+                icon: Icons.bookmarks_outlined,
+                label: 'Yer imleri',
+                onPressed: _showBookmarks,
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: PageNotesButton(
+                  documentPath: widget.path,
+                  pageKey: () => 'pdf-${_controller.pageNumber ?? 1}',
+                  pageLabel: () => 'Sayfa ${_controller.pageNumber ?? 1}',
+                  showLabel: true,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: ShareWithNotesButton(
+                  documentPath: widget.path,
+                  showLabel: true,
+                ),
+              ),
+              action(
+                icon: Icons.fit_screen_rounded,
+                label: 'Sayfayı sığdır',
+                onPressed: _fitCurrentPageWidth,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ───────────── arayüz ─────────────
@@ -295,26 +655,20 @@ class _PdfScreenState extends State<PdfScreen> {
     final pageCount = _pageCount;
     return Scaffold(
       appBar: AppBar(
-        title: Text(fileTitle(widget.path), overflow: TextOverflow.ellipsis),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(fileTitle(widget.path), overflow: TextOverflow.ellipsis),
+            Text(
+              'PDF · Sayfa $_currentPage${pageCount == null ? '' : ' / $pageCount'}',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
         actions: [
-          ShareWithNotesButton(documentPath: widget.path),
-          PageNotesButton(
-            documentPath: widget.path,
-            pageKey: () => 'pdf-${_controller.pageNumber ?? 1}',
-            pageLabel: () => 'Sayfa ${_controller.pageNumber ?? 1}',
-          ),
-          IconButton(
-            tooltip: _pen ? 'Kaydırma moduna geç' : 'Kalemle yaz / çiz',
-            isSelected: _pen,
-            style: _pen
-                ? IconButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Colors.white,
-                  )
-                : null,
-            onPressed: model == null ? null : _togglePen,
-            icon: const Icon(Icons.draw_rounded),
-          ),
           PopupMenuButton<_Menu>(
             tooltip: 'Kaydet ve paylaş',
             enabled: model != null,
@@ -351,6 +705,13 @@ class _PdfScreenState extends State<PdfScreen> {
               ),
               PopupMenuDivider(),
               PopupMenuItem(
+                value: _Menu.exportWithNotes,
+                child: ListTile(
+                  leading: Icon(Icons.picture_as_pdf_outlined),
+                  title: Text('Notlarla PDF oluştur'),
+                ),
+              ),
+              PopupMenuItem(
                 value: _Menu.clear,
                 child: ListTile(
                   leading: Icon(Icons.delete_outline_rounded),
@@ -372,6 +733,47 @@ class _PdfScreenState extends State<PdfScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                _buildPdfToolbar(context),
+                if (_showSearch)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _searchController,
+                            autofocus: true,
+                            decoration: const InputDecoration(
+                              hintText: 'PDF içinde ara…',
+                              prefixIcon: Icon(Icons.search_rounded),
+                              isDense: true,
+                            ),
+                            onChanged: _onSearchChanged,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Önceki eşleşme',
+                          onPressed: () => _moveSearch(-1),
+                          icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                        ),
+                        IconButton(
+                          tooltip: 'Sonraki eşleşme',
+                          onPressed: () => _moveSearch(1),
+                          icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                        ),
+                        Text(_searchMatchCountLabel),
+                        IconButton(
+                          tooltip: 'Aramayı kapat',
+                          onPressed: () {
+                            _searchController.clear();
+                            _textSearcher?.resetTextSearch();
+                            setState(() => _showSearch = false);
+                          },
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
                 Expanded(
                   child: Stack(
                     children: [
@@ -381,16 +783,36 @@ class _PdfScreenState extends State<PdfScreen> {
                           controller: _controller,
                           params: PdfViewerParams(
                             backgroundColor: Pal.of(context).canvas,
+                            onViewerReady: (_, __) {
+                              _initializeTextSearcher();
+                              _restorePosition();
+                            },
                             onPageChanged: (pageNumber) {
                               final page =
                                   pageNumber ?? _controller.pageNumber ?? 1;
                               if (_currentPage == page || !mounted) return;
                               setState(() => _currentPage = page);
+                              _schedulePositionSave(page);
+                              if (!_manualZoom) {
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  if (mounted && !_manualZoom) {
+                                    _fitCurrentPageWidth();
+                                  }
+                                });
+                              }
+                            },
+                            onInteractionUpdate: (details) {
+                              if ((details.scale - 1).abs() > 0.01) {
+                                _manualZoom = true;
+                              }
                             },
                             // Kalem modunda tek parmakla kaydırma kapanır,
                             // iki parmakla yakınlaştırma açık kalır.
                             panEnabled: !_pen,
                             scaleEnabled: true,
+                            pagePaintCallbacks: [_paintSearchMatches],
                             pageOverlaysBuilder: (context, pageRect, page) => [
                               InkLayer(
                                 key: ValueKey('ink-${page.pageNumber}'),

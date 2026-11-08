@@ -9,8 +9,13 @@ import '../services/page_notes_bundle_service.dart';
 
 class ShareWithNotesButton extends StatelessWidget {
   final String documentPath;
+  final bool showLabel;
 
-  const ShareWithNotesButton({super.key, required this.documentPath});
+  const ShareWithNotesButton({
+    super.key,
+    required this.documentPath,
+    this.showLabel = false,
+  });
 
   Future<void> _share(BuildContext context) async {
     try {
@@ -37,9 +42,26 @@ class ShareWithNotesButton extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => IconButton(
-    tooltip: 'Belgeyi notlarla paylaş',
-    icon: const Icon(Icons.outbox_rounded),
-    onPressed: () => _share(context),
-  );
+  Widget build(BuildContext context) {
+    if (showLabel) {
+      return OutlinedButton.icon(
+        onPressed: () => _share(context),
+        style: OutlinedButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        icon: const Icon(Icons.outbox_rounded, size: 18),
+        label: const Text('Notlarla paylaş'),
+      );
+    }
+
+    return IconButton(
+      tooltip: 'Belgeyi notlarla paylaş',
+      icon: const Icon(Icons.outbox_rounded),
+      onPressed: () => _share(context),
+    );
+  }
 }

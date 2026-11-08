@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -32,6 +33,8 @@ class _NoteScreenState extends State<NoteScreen> {
   InkSession? _ink;
   bool _dirty = false;
   bool _loading = true;
+  int _wordCount = 0;
+  Timer? _wordCountTimer;
 
   bool get _isNew => _path == null;
 
@@ -47,6 +50,7 @@ class _NoteScreenState extends State<NoteScreen> {
   void dispose() {
     _title.dispose();
     _body.dispose();
+    _wordCountTimer?.cancel();
     _bodyScrollController.dispose();
     _ink?.dispose();
     super.dispose();
@@ -71,13 +75,29 @@ class _NoteScreenState extends State<NoteScreen> {
       } catch (_) {}
       _title.text = p.basenameWithoutExtension(_path!);
     }
+    _wordCount = _countWords(_body.text);
     _body.addListener(() {
       if (!_dirty && !_loading) setState(() => _dirty = true);
+      _scheduleWordCountUpdate();
     });
     _title.addListener(() {
       if (!_dirty && !_loading) setState(() => _dirty = true);
     });
     if (mounted) setState(() => _loading = false);
+  }
+
+  int _countWords(String text) {
+    final trimmed = text.trim();
+    return trimmed.isEmpty ? 0 : trimmed.split(RegExp(r'\s+')).length;
+  }
+
+  void _scheduleWordCountUpdate() {
+    _wordCountTimer?.cancel();
+    _wordCountTimer = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      final count = _countWords(_body.text);
+      if (count != _wordCount) setState(() => _wordCount = count);
+    });
   }
 
   String get _safeTitle {
@@ -167,9 +187,6 @@ class _NoteScreenState extends State<NoteScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final words = _body.text.trim().isEmpty
-        ? 0
-        : _body.text.trim().split(RegExp(r'\s+')).length;
     final ink = _ink;
     ink?.adaptColor(context);
     final penOn = ink?.pen == true;
@@ -188,7 +205,6 @@ class _NoteScreenState extends State<NoteScreen> {
           hintText: 'Yazmaya başla…',
           border: InputBorder.none,
         ),
-        onChanged: (_) => setState(() {}),
       ),
     );
 
@@ -277,7 +293,7 @@ class _NoteScreenState extends State<NoteScreen> {
                     child: Align(
                       alignment: Alignment.centerRight,
                       child: Text(
-                        '$words kelime',
+                        '$_wordCount kelime',
                         style: const TextStyle(
                           color: Color(0xFF7A8594),
                           fontSize: 12,

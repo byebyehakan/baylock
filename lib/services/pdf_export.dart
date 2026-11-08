@@ -9,6 +9,8 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../ink/ink_core.dart';
+import '../models/page_note.dart';
+import 'page_notes_pdf_export.dart';
 
 const _dpi = 144.0;
 
@@ -28,6 +30,7 @@ Future<void> exportAnnotatedPdf({
   required String outPath,
   bool onlyInked = false,
   int? totalPages,
+  Map<String, List<PageNote>> notesByPage = const {},
   void Function(int done, int? total)? onProgress,
 }) async {
   final bytes = await File(srcPath).readAsBytes();
@@ -75,5 +78,6 @@ Future<void> exportAnnotatedPdf({
     onProgress?.call(i, total);
   }
 
+  await appendPageNotesToPdf(doc, notesByPage);
   await File(outPath).writeAsBytes(await doc.save());
 }

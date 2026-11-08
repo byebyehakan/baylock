@@ -1,11 +1,18 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../ink/ink_core.dart';
 import '../models/page_note.dart';
+import '../services/file_service.dart';
+import '../services/page_notes_pdf_export.dart';
 import '../services/page_notes_store.dart';
+import '../services/recent_store.dart';
 import '../theme.dart';
+import '../widgets/common.dart';
+import 'viewer_router.dart';
 
 class PageNotesScreen extends StatefulWidget {
   final String documentPath;
@@ -266,6 +273,67 @@ class _PageNotesScreenState extends State<PageNotesScreen> {
     }
   }
 
+  Future<void> _searchNotes() async {
+    final controller = TextEditingController();
+    final query = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Notlarda ara'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Aranacak kelime'),
+          onSubmitted: (value) => Navigator.pop(context, value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Ara'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (query == null || query.isEmpty) return;
+    final matches = [
+      for (var index = 0; index < _notes.length; index++)
+        if (_notes[index].text.toLowerCase().contains(query.toLowerCase()))
+          index,
+    ];
+    if (matches.isEmpty) {
+      if (mounted) toast(context, 'Bu sayfanın notlarında eşleşme bulunamadı');
+      return;
+    }
+    final selected = matches.length == 1
+        ? matches.single
+        : await showModalBottomSheet<int>(
+            context: context,
+            showDragHandle: true,
+            builder: (context) => SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final index in matches)
+                    ListTile(
+                      title: Text('Not ${index + 1}'),
+                      subtitle: Text(
+                        _notes[index].text.replaceAll('\n', ' '),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: () => Navigator.pop(context, index),
+                    ),
+                ],
+              ),
+            ),
+          );
+    if (selected != null) _select(selected);
+  }
+
   Future<void> _deletePage() async {
     final current = _current;
     if (current == null) return;
@@ -329,6 +397,38 @@ class _PageNotesScreenState extends State<PageNotesScreen> {
     if (mounted && !_dirty) Navigator.pop(context);
   }
 
+  Future<void> _exportNotesPdf() async {
+    _saveTimer?.cancel();
+    while (_saving) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    await _persist();
+    if (_dirty) {
+      if (mounted) toast(context, 'Önce notların kaydedilmesi gerekiyor');
+      return;
+    }
+    try {
+      final notesByPage = await _store.loadAll(widget.documentPath);
+      if (notesByPage.values.every((notes) => notes.isEmpty)) {
+        if (mounted) toast(context, 'Dışa aktarılacak not bulunamadı');
+        return;
+      }
+      final directory = await FileService.docsDir();
+      final output = await FileService.uniquePath(
+        directory.path,
+        '${p.basenameWithoutExtension(widget.documentPath)} (notlar).pdf',
+      );
+      final bytes = await createPageNotesPdf(notesByPage);
+      await File(output).writeAsBytes(bytes, flush: true);
+      await RecentStore.add(output);
+      if (!mounted) return;
+      toast(context, 'Notlar PDF olarak kaydedildi');
+      await openDocument(context, output);
+    } catch (error) {
+      if (mounted) toast(context, 'Notlar PDF yapılamadı: $error');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final current = _current;
@@ -342,6 +442,16 @@ class _PageNotesScreenState extends State<PageNotesScreen> {
         ),
         title: Text('${widget.pageLabel} · Notlar'),
         actions: [
+          IconButton(
+            tooltip: 'Notlarda ara',
+            onPressed: _loading || _notes.isEmpty ? null : _searchNotes,
+            icon: const Icon(Icons.search_rounded),
+          ),
+          IconButton(
+            tooltip: 'Tüm notları PDF yap',
+            onPressed: _loading ? null : _exportNotesPdf,
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+          ),
           if (current != null) ...[
             IconButton(
               tooltip: 'Yazı tipi',

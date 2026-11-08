@@ -88,5 +88,24 @@ class DocFile {
     );
   }
 
+  static Future<DocFile> fromPathAsync(String path) async {
+    var modified = DateTime.fromMillisecondsSinceEpoch(0);
+    var size = 0;
+    try {
+      final stat = await File(path).stat();
+      modified = stat.modified;
+      size = stat.size;
+    } on FileSystemException {
+      // The file may have been removed since it was listed.
+    }
+    return DocFile(
+      path: path,
+      name: p.basename(path),
+      size: size,
+      modified: modified,
+      kind: kindOf(path),
+    );
+  }
+
   String get ext => p.extension(path).replaceFirst('.', '').toUpperCase();
 }

@@ -17,7 +17,7 @@ class FileService {
   static Future<Directory> docsDir() async {
     final base = await getApplicationDocumentsDirectory();
     final dir = Directory(p.join(base.path, 'Belgelerim'));
-    if (!dir.existsSync()) dir.createSync(recursive: true);
+    if (!await dir.exists()) await dir.create(recursive: true);
     return dir;
   }
 
@@ -26,7 +26,7 @@ class FileService {
     final ext = p.extension(fileName);
     var candidate = p.join(dir, fileName);
     var i = 1;
-    while (File(candidate).existsSync()) {
+    while (await File(candidate).exists()) {
       candidate = p.join(dir, '$name ($i)$ext');
       i++;
     }
@@ -45,10 +45,10 @@ class FileService {
   /// Uygulamada yazılan notlar ve çizimler.
   static Future<List<DocFile>> localFiles() async {
     final dir = await docsDir();
-    final out = <DocFile>[];
-    for (final e in dir.listSync()) {
-      if (e is File) out.add(DocFile.fromPath(e.path));
-    }
+    final files = await dir.list(followLinks: false).where((entity) => entity is File).toList();
+    final out = await Future.wait(
+      files.map((file) => DocFile.fromPathAsync(file.path)),
+    );
     out.sort((a, b) => b.modified.compareTo(a.modified));
     return out;
   }

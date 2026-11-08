@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -11,9 +12,18 @@ import '../models/pptx_presentation.dart';
 
 class PptxService {
   static const _designWidth = 960.0;
+  static const _backgroundParseThreshold = 256 * 1024;
 
   static Future<PptxPresentation> load(String path) async {
-    final archive = ZipDecoder().decodeBytes(await File(path).readAsBytes());
+    final bytes = await File(path).readAsBytes();
+    if (bytes.length >= _backgroundParseThreshold) {
+      return Isolate.run(() => _parse(bytes));
+    }
+    return _parse(bytes);
+  }
+
+  static PptxPresentation _parse(Uint8List bytes) {
+    final archive = ZipDecoder().decodeBytes(bytes);
     final themeColors = _readThemeColors(archive);
     final presentation = XmlDocument.parse(
       _xml(archive, 'ppt/presentation.xml'),

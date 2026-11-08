@@ -117,8 +117,15 @@ class _DrawScreenState extends State<DrawScreen> {
     paintPaper(canvas, size, _paper);
     paintInk(canvas, size, _model.of(1));
     final img = await rec.endRecording().toImage(size.width.round(), size.height.round());
-    final data = await img.toByteData(format: ui.ImageByteFormat.png);
-    return data!.buffer.asUint8List();
+    try {
+      final data = await img.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) {
+        throw StateError('Çizim PNG görüntüsüne dönüştürülemedi.');
+      }
+      return data.buffer.asUint8List();
+    } finally {
+      img.dispose();
+    }
   }
 
   String get _stamp => '${DateTime.now().millisecondsSinceEpoch ~/ 1000}';
