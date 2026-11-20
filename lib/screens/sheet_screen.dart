@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import '../ink/ink_session.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/document_tool_dock.dart';
 import '../widgets/page_notes_button.dart';
 import '../widgets/quick_scroll_rail.dart';
 import '../widgets/share_with_notes_button.dart';
@@ -201,7 +202,6 @@ class _SheetScreenState extends State<SheetScreen> {
               pageKey: () => 'sheet-$_current',
               pageLabel: () => 'Sayfa: $_current',
             ),
-          _ink.penButton(context, _refresh),
           if (_dirty)
             TextButton.icon(
               onPressed: _save,
@@ -211,7 +211,9 @@ class _SheetScreenState extends State<SheetScreen> {
           ...fileActions(context, widget.path),
         ],
       ),
-      body: _loading
+      body: DocumentToolDock(
+        model: _ink.model,
+        child: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(
@@ -245,6 +247,7 @@ class _SheetScreenState extends State<SheetScreen> {
                         if (_ink.pen) _ink.toolbar(context, _refresh),
                       ],
                     ),
+      ),
     );
   }
 

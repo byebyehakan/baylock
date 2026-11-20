@@ -15,4 +15,21 @@ void main() {
       isNot(buildTheme(Brightness.dark).colorScheme.primary),
     );
   });
+
+  test('custom palette also colours document surfaces', () {
+    final ocean = buildTheme(
+      Brightness.light,
+      seedColor: AppPalette.ocean.seed,
+    );
+    final plum = buildTheme(
+      Brightness.light,
+      seedColor: AppPalette.plum.seed,
+    );
+
+    expect(ocean.colorScheme.primary, isNot(plum.colorScheme.primary));
+    expect(
+      ocean.colorScheme.surfaceContainerLow,
+      isNot(plum.colorScheme.surfaceContainerLow),
+    );
+  });
 }

@@ -17,6 +17,7 @@ import '../services/page_notes_store.dart';
 import '../services/recent_store.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/document_tool_dock.dart';
 import '../widgets/page_notes_button.dart';
 import '../widgets/quick_scroll_rail.dart';
 import '../widgets/share_with_notes_button.dart';
@@ -46,7 +47,6 @@ class _PdfScreenState extends State<PdfScreen> {
   final _notesStore = const PageNotesStore();
   InkModel? _model;
   PdfTextSearcher? _textSearcher;
-  bool _pen = false;
   bool _manualZoom = false;
   bool _showSearch = false;
   bool _restoringPosition = true;
@@ -278,11 +278,6 @@ class _PdfScreenState extends State<PdfScreen> {
     } catch (error) {
       if (mounted) toast(context, 'Notlarla PDF oluşturulamadı: $error');
     }
-  }
-
-  void _togglePen() {
-    setState(() => _pen = !_pen);
-    _model!.update(() => _model!.pen = _pen);
   }
 
   int? get _pageCount {
@@ -593,12 +588,6 @@ class _PdfScreenState extends State<PdfScreen> {
           child: Row(
             children: [
               action(
-                icon: Icons.draw_rounded,
-                label: _pen ? 'Kaydır' : 'Çizim',
-                selected: _pen,
-                onPressed: _model == null ? null : _togglePen,
-              ),
-              action(
                 icon: Icons.search_rounded,
                 label: 'Ara',
                 selected: _showSearch,
@@ -731,7 +720,11 @@ class _PdfScreenState extends State<PdfScreen> {
       ),
       body: model == null
           ? const Center(child: CircularProgressIndicator())
-          : Column(
+          : DocumentToolDock(
+              model: model,
+              child: ListenableBuilder(
+                listenable: model,
+                builder: (_, __) => Column(
               children: [
                 _buildPdfToolbar(context),
                 if (_showSearch)
@@ -810,7 +803,7 @@ class _PdfScreenState extends State<PdfScreen> {
                             },
                             // Kalem modunda tek parmakla kaydırma kapanır,
                             // iki parmakla yakınlaştırma açık kalır.
-                            panEnabled: !_pen,
+                            panEnabled: !model.pen,
                             scaleEnabled: true,
                             pagePaintCallbacks: [_paintSearchMatches],
                             pageOverlaysBuilder: (context, pageRect, page) => [
@@ -843,7 +836,7 @@ class _PdfScreenState extends State<PdfScreen> {
                     ],
                   ),
                 ),
-                if (_pen)
+                if (model.pen)
                   InkToolbar(
                     model: model,
                     onChanged: _save,
@@ -860,7 +853,9 @@ class _PdfScreenState extends State<PdfScreen> {
                       ),
                     ],
                   ),
-              ],
+                  ],
+                ),
+              ),
             ),
     );
   }

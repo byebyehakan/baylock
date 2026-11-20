@@ -88,7 +88,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('Vazgeç'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Sil'),
           ),
@@ -157,7 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   valueListenable: accentColor,
                   builder: (context, color, _) => _settingTile(
                     icon: Icons.palette_outlined,
-                    title: 'Uygulama rengi',
+                    title: 'Renk paleti',
                     subtitle: _accentColors.entries
                         .firstWhere(
                           (entry) => entry.value.toARGB32() == color.toARGB32(),
@@ -261,7 +264,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Padding(
                   padding: EdgeInsets.fromLTRB(4, 0, 4, 12),
                   child: Text(
-                    'Uygulama rengi',
+                    'Renk paleti',
                     style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
                   ),
                 ),

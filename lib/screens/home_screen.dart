@@ -294,7 +294,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             child: const Text('Vazgeç'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Sil'),
           ),
@@ -379,11 +382,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               },
             ),
             ListTile(
-              leading: const Icon(
+              leading: Icon(
                 Icons.delete_outline_rounded,
-                color: Colors.red,
+                color: Theme.of(ctx).colorScheme.error,
               ),
-              title: const Text('Sil', style: TextStyle(color: Colors.red)),
+              title: Text(
+                'Sil',
+                style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+              ),
               onTap: () {
                 Navigator.pop(ctx);
                 _delete(d);

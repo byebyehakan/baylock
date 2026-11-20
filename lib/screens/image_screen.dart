@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../ink/ink_session.dart';
 import '../widgets/common.dart';
+import '../widgets/document_tool_dock.dart';
 import '../widgets/page_notes_button.dart';
 import '../widgets/share_with_notes_button.dart';
 
@@ -33,7 +34,6 @@ class _ImageScreenState extends State<ImageScreen> {
       appBar: AppBar(
         title: Text(fileTitle(widget.path), overflow: TextOverflow.ellipsis),
         actions: [
-          _ink.penButton(context, _refresh),
           ShareWithNotesButton(documentPath: widget.path),
           PageNotesButton(
             documentPath: widget.path,
@@ -43,7 +43,9 @@ class _ImageScreenState extends State<ImageScreen> {
           ...fileActions(context, widget.path),
         ],
       ),
-      body: Column(
+      body: DocumentToolDock(
+        model: _ink.model,
+        child: Column(
         children: [
           Expanded(
             child: _ink.watch(
@@ -61,6 +63,7 @@ class _ImageScreenState extends State<ImageScreen> {
           ),
           if (_ink.pen) _ink.toolbar(context, _refresh),
         ],
+        ),
       ),
     );
   }
