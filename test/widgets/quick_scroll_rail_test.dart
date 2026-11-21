@@ -3,9 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('shows for long content and quickly scrolls down', (
-    tester,
-  ) async {
+  testWidgets('shows only a transient thumb for long content', (tester) async {
     final controller = ScrollController();
     addTearDown(controller.dispose);
     tester.view.physicalSize = const Size(400, 600);
@@ -28,7 +26,7 @@ void main() {
                 right: 6,
                 top: 0,
                 bottom: 0,
-                child: Center(child: QuickScrollRail(controller: controller)),
+                child: QuickScrollRail(controller: controller),
               ),
             ],
           ),
@@ -37,10 +35,23 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('/'), findsOneWidget);
-    await tester.tap(find.byTooltip('Hızlıca aşağı git'));
+    final thumb = find.byKey(const Key('quick-scroll-thumb'));
+    expect(tester.widget<AnimatedOpacity>(thumb).opacity, 0);
+
+    controller.jumpTo(500);
+    await tester.pump();
+    expect(tester.widget<AnimatedOpacity>(thumb).opacity, 1);
     await tester.pumpAndSettle();
 
-    expect(controller.offset, greaterThan(0));
+    await tester.drag(
+      find.byKey(const Key('quick-scroll-rail')),
+      const Offset(0, 200),
+    );
+    await tester.pumpAndSettle();
+    expect(controller.offset, greaterThan(500));
+
+    await tester.pump(const Duration(milliseconds: 1000));
+    await tester.pumpAndSettle();
+    expect(tester.widget<AnimatedOpacity>(thumb).opacity, 0);
   });
 }

@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 import '../ink/ink_session.dart';
 import '../widgets/common.dart';
 import '../widgets/document_tool_dock.dart';
-import '../widgets/page_notes_button.dart';
-import '../widgets/share_with_notes_button.dart';
 
 class ImageScreen extends StatefulWidget {
   final String path;
@@ -34,12 +32,6 @@ class _ImageScreenState extends State<ImageScreen> {
       appBar: AppBar(
         title: Text(fileTitle(widget.path), overflow: TextOverflow.ellipsis),
         actions: [
-          ShareWithNotesButton(documentPath: widget.path),
-          PageNotesButton(
-            documentPath: widget.path,
-            pageKey: () => 'image-1',
-            pageLabel: () => 'Görsel',
-          ),
           ...fileActions(context, widget.path),
         ],
       ),

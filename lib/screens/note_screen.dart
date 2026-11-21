@@ -11,9 +11,7 @@ import '../ink/ink_session.dart';
 import '../services/file_service.dart';
 import '../services/recent_store.dart';
 import '../widgets/common.dart';
-import '../widgets/page_notes_button.dart';
 import '../widgets/quick_scroll_rail.dart';
-import '../widgets/share_with_notes_button.dart';
 import 'viewer_router.dart';
 
 class NoteScreen extends StatefulWidget {
@@ -229,13 +227,6 @@ class _NoteScreenState extends State<NoteScreen> {
                 )
               : Text(fileTitle(_path!), overflow: TextOverflow.ellipsis),
           actions: [
-            if (_path != null)
-              PageNotesButton(
-                documentPath: _path!,
-                pageKey: () => 'note-1',
-                pageLabel: () => 'Not',
-              ),
-            if (_path != null) ShareWithNotesButton(documentPath: _path!),
             IconButton(
               tooltip: penOn ? 'Yazma moduna geç' : 'Kalemle çiz',
               isSelected: penOn,
@@ -278,10 +269,8 @@ class _NoteScreenState extends State<NoteScreen> {
                           right: 6,
                           top: 0,
                           bottom: 0,
-                          child: Center(
-                            child: QuickScrollRail(
-                              controller: _bodyScrollController,
-                            ),
+                          child: QuickScrollRail(
+                            controller: _bodyScrollController,
                           ),
                         ),
                       ],

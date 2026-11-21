@@ -9,9 +9,7 @@ import '../ink/ink_session.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/document_tool_dock.dart';
-import '../widgets/page_notes_button.dart';
 import '../widgets/quick_scroll_rail.dart';
-import '../widgets/share_with_notes_button.dart';
 
 Future<Archive> _readZip(String path) async {
   final bytes = await File(path).readAsBytes();
@@ -134,12 +132,6 @@ class _WordScreenState extends State<WordScreen> {
       appBar: AppBar(
         title: Text(fileTitle(widget.path), overflow: TextOverflow.ellipsis),
         actions: [
-          ShareWithNotesButton(documentPath: widget.path),
-          PageNotesButton(
-            documentPath: widget.path,
-            pageKey: () => 'word-1',
-            pageLabel: () => 'Belge',
-          ),
           ...fileActions(context, widget.path),
         ],
       ),
@@ -204,10 +196,8 @@ class _WordScreenState extends State<WordScreen> {
                             right: 6,
                             top: 0,
                             bottom: 0,
-                            child: Center(
-                              child: QuickScrollRail(
-                                controller: _scrollController,
-                              ),
+                            child: QuickScrollRail(
+                              controller: _scrollController,
                             ),
                           ),
                         ],

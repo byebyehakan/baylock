@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+/// A compact, touch-friendly position scrubber for long documents.
 class QuickScrollRail extends StatelessWidget {
   final ScrollController? controller;
   final int? pageCount;
@@ -32,14 +34,12 @@ class QuickScrollRail extends StatelessWidget {
         onSelected: onPageSelected!,
       );
     }
-
     return _ScrollableRail(controller: controller!);
   }
 }
 
 class _ScrollableRail extends StatefulWidget {
   final ScrollController controller;
-
   const _ScrollableRail({required this.controller});
 
   @override
@@ -62,9 +62,6 @@ class _ScrollableRailState extends State<_ScrollableRail> {
     if (oldWidget.controller == widget.controller) return;
     oldWidget.controller.removeListener(_onScroll);
     widget.controller.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() {});
-    });
   }
 
   @override
@@ -105,7 +102,7 @@ class _ScrollableRailState extends State<_ScrollableRail> {
   }
 }
 
-class _Rail extends StatelessWidget {
+class _Rail extends StatefulWidget {
   final int count;
   final int page;
   final ValueChanged<int> onSelected;
@@ -117,86 +114,90 @@ class _Rail extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Material(
-      color: colorScheme.surface.withValues(alpha: 0.9),
-      elevation: 3,
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 3),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              tooltip: 'Hızlıca yukarı git',
-              visualDensity: VisualDensity.compact,
-              onPressed: page > 1
-                  ? () => onSelected((page - 5).clamp(1, count).toInt())
-                  : null,
-              icon: const Icon(Icons.keyboard_arrow_up_rounded),
-            ),
-            SizedBox(
-              width: 28,
-              height: 100,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final maxTop = constraints.maxHeight - 14;
-                  final top = (page - 1) / (count - 1) * maxTop;
-                  void selectAt(double dy) {
-                    final progress = (dy / constraints.maxHeight).clamp(
-                      0.0,
-                      1.0,
-                    );
-                    onSelected((progress * (count - 1)).round() + 1);
-                  }
+  State<_Rail> createState() => _RailState();
+}
 
-                  return GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTapDown: (details) => selectAt(details.localPosition.dy),
-                    onVerticalDragUpdate: (details) =>
-                        selectAt(details.localPosition.dy),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Container(
-                          width: 2,
+class _RailState extends State<_Rail> {
+  static const _visibilityDuration = Duration(milliseconds: 900);
+  static const _fadeDuration = Duration(milliseconds: 150);
+
+  Timer? _hideTimer;
+  bool _visible = false;
+
+  @override
+  void didUpdateWidget(covariant _Rail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.page != widget.page) _showThumb();
+  }
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    super.dispose();
+  }
+
+  void _showThumb() {
+    _hideTimer?.cancel();
+    if (!_visible) setState(() => _visible = true);
+    _hideTimer = Timer(_visibilityDuration, () {
+      if (mounted) setState(() => _visible = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      label: 'Konum: ${widget.page} / ${widget.count}',
+      slider: true,
+      value: '${widget.page} / ${widget.count}',
+      child: SizedBox(
+        width: 28,
+        height: double.infinity,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const thumbHeight = 28.0;
+            final maxTop = constraints.maxHeight - thumbHeight;
+            final top = (widget.page - 1) / (widget.count - 1) * maxTop;
+            void selectAt(double dy) {
+              _showThumb();
+              final progress = (dy / constraints.maxHeight).clamp(0.0, 1.0);
+              widget.onSelected((progress * (widget.count - 1)).round() + 1);
+            }
+
+            return IgnorePointer(
+              ignoring: !_visible,
+              child: GestureDetector(
+                key: const Key('quick-scroll-rail'),
+                behavior: HitTestBehavior.opaque,
+                onTapDown: (details) => selectAt(details.localPosition.dy),
+                onVerticalDragUpdate: (details) =>
+                    selectAt(details.localPosition.dy),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Positioned(
+                      top: top,
+                      child: AnimatedOpacity(
+                        key: const Key('quick-scroll-thumb'),
+                        opacity: _visible ? 1 : 0,
+                        duration: _fadeDuration,
+                        curve: Curves.easeOut,
+                        child: Container(
+                          width: 8,
+                          height: thumbHeight,
                           decoration: BoxDecoration(
-                            color: colorScheme.outlineVariant,
-                            borderRadius: BorderRadius.circular(2),
+                            color: scheme.primary,
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        Positioned(
-                          top: top,
-                          child: Container(
-                            width: 14,
-                            height: 14,
-                            decoration: BoxDecoration(
-                              color: colorScheme.primary,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: colorScheme.surface,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  );
-                },
+                  ],
+                ),
               ),
-            ),
-            Text('$page/$count', style: Theme.of(context).textTheme.labelSmall),
-            IconButton(
-              tooltip: 'Hızlıca aşağı git',
-              visualDensity: VisualDensity.compact,
-              onPressed: page < count
-                  ? () => onSelected((page + 5).clamp(1, count).toInt())
-                  : null,
-              icon: const Icon(Icons.keyboard_arrow_down_rounded),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

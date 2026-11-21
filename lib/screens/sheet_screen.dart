@@ -9,9 +9,7 @@ import '../ink/ink_session.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/document_tool_dock.dart';
-import '../widgets/page_notes_button.dart';
 import '../widgets/quick_scroll_rail.dart';
-import '../widgets/share_with_notes_button.dart';
 
 class SheetScreen extends StatefulWidget {
   final String path;
@@ -195,13 +193,6 @@ class _SheetScreenState extends State<SheetScreen> {
       appBar: AppBar(
         title: Text(fileTitle(widget.path), overflow: TextOverflow.ellipsis),
         actions: [
-          ShareWithNotesButton(documentPath: widget.path),
-          if (_current != null)
-            PageNotesButton(
-              documentPath: widget.path,
-              pageKey: () => 'sheet-$_current',
-              pageLabel: () => 'Sayfa: $_current',
-            ),
           if (_dirty)
             TextButton.icon(
               onPressed: _save,
@@ -234,10 +225,8 @@ class _SheetScreenState extends State<SheetScreen> {
                                 right: 6,
                                 top: 0,
                                 bottom: 0,
-                                child: Center(
-                                  child: QuickScrollRail(
-                                    controller: _verticalController,
-                                  ),
+                                child: QuickScrollRail(
+                                  controller: _verticalController,
                                 ),
                               ),
                             ],

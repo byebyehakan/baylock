@@ -8,8 +8,6 @@ import '../models/pptx_presentation.dart';
 import '../services/pptx_service.dart';
 import '../widgets/common.dart';
 import '../widgets/document_tool_dock.dart';
-import '../widgets/page_notes_button.dart';
-import '../widgets/share_with_notes_button.dart';
 
 class SlidesScreen extends StatefulWidget {
   final String path;
@@ -86,12 +84,6 @@ class _SlidesScreenState extends State<SlidesScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
               actions: [
-                ShareWithNotesButton(documentPath: widget.path),
-                PageNotesButton(
-                  documentPath: widget.path,
-                  pageKey: () => 'slide-${_page + 1}',
-                  pageLabel: () => 'Slayt ${_page + 1}',
-                ),
                 ...fileActions(context, widget.path),
               ],
             ),
@@ -169,14 +161,6 @@ class _SlidesScreenState extends State<SlidesScreen> {
                           icon: Icons.draw_rounded,
                           selected: _ink.pen,
                         ),
-                        const SizedBox(width: 8),
-                        PageNotesButton(
-                          documentPath: widget.path,
-                          pageKey: () => 'slide-${_page + 1}',
-                          pageLabel: () => 'Slayt ${_page + 1}',
-                        ),
-                        const SizedBox(width: 8),
-                        ShareWithNotesButton(documentPath: widget.path),
                         const SizedBox(width: 8),
                         _FullscreenButton(
                           tooltip: 'Tam ekrandan çık',
